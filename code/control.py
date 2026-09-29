@@ -50,7 +50,8 @@ class PDController:
             # con el mismo tiempo.
             d = (error - self._prev_error) / max(now - self._prev_t, 1e-3)
         # Filtro exponencial: 50 % valor anterior + 50 % valor nuevo
-        self._d_filtered = 0.5 * self._d_filtered + 0.5 * d
+        a = config.D_SMOOTHING
+        self._d_filtered = a * self._d_filtered + (1.0 - a) * d
         self._prev_error, self._prev_t = error, now
         u = self.kp * error + self.kd * self._d_filtered
         return max(-1.0, min(1.0, u))    # Saturación a [-1, 1]
@@ -91,6 +92,8 @@ class Brain:
         self.last_side = 1               # +1 derecha, -1 izquierda
         self.lost_since = None           # Momento en que se perdió la línea
         self.paused = False
+        self._error_f = 0.0
+        self._error_init = False
         # Ramificaciones y callejones
         self._junction_frames = 0        # Frames seguidos viendo 2+ salidas
         self._dead_frames = 0            # Frames seguidos viendo la línea terminar
@@ -139,6 +142,7 @@ class Brain:
         self.lost_since = None
         self.pd.reset()
         self.driver.reset()
+        self._error_init = False
 
     def _on_line(self, line, now):
         """
@@ -182,7 +186,14 @@ class Brain:
             return
 
         error = self.nav.steer_error(line)
-        self.error = line.error if error is None else error
+        raw = line.error if error is None else error
+        a = config.ERROR_SMOOTHING
+        if not self._error_init:
+            self._error_f = raw
+            self._error_init = True
+        else:
+            self._error_f = a * self._error_f + (1.0 - a) * raw
+        self.error = self._error_f
         self.u = self.pd.update(self.error, now)
         # Recordar hacia dónde se giraba (para buscar por ese lado si se pierde)
         if abs(self.u) >= config.DEADBAND:
@@ -197,6 +208,7 @@ class Brain:
           después        : DETENIDO por seguridad.
         """
         self.line_found = False
+        self._error_init = False
         self._junction_frames = self._dead_frames = 0
 
         # Si la línea desaparece justo después de ver una señal,

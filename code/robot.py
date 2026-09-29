@@ -25,6 +25,8 @@ class Robot:
     """
 
     def __init__(self, address, channel=config.RFCOMM_CHANNEL):  # Recibe dirección y canal Bluetooth
+        if isinstance(address, str):  # Cadena vacía o con espacios = sin robot
+            address = address.strip() or None
         self.address = address      # Dirección del robot: None, MAC o puerto serie
         self.channel = channel      # Canal RFCOMM (por defecto 1)
         self._sock = None           # Socket Bluetooth (si se conecta por MAC)

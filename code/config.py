@@ -9,7 +9,7 @@ desde la ventana de trackbars "Calibracion".
 # ─────────────────────────────────────────────────────────────────────────────
 #  CÁMARA
 # ─────────────────────────────────────────────────────────────────────────────
-CAMERA_SOURCE = "phone"             # "phone" (celular por WiFi) o "usb"
+CAMERA_SOURCE = "phone"               # "phone" (celular por WiFi) o "usb"
 CAMERA_INDEX = 0                    # Solo para "usb"
 PHONE_HTTP_PORT = 8080
 PHONE_HTTPS_PORT = 8443
@@ -37,8 +37,8 @@ BINARY_THRESHOLD = 115              # [TB] 0 = Otsu automático
 # El error se normaliza a [-1, 1] (±1 = línea en el borde de la imagen) y la
 # salida u también: u = +1 "gira todo a la derecha", u = -1 "todo a la
 # izquierda". Así el control no depende ni de la cámara ni del robot.
-KP = 1.20                           # [TB]
-KD = 0.15                           # [TB]
+KP = 0.50                           # [TB]
+KD = 0.05                           # [TB]
 DEADBAND = 0.08                     # [TB] |u| menor que esto → recto
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ LOST_STOP_S = 8.0                   # Sin línea tanto tiempo → parar por segu
 #   None                 → simulación (no se conecta nada, se ve en "Movimiento")
 #   "00:1B:10:21:2C:1B"  → MAC del mBot (socket RFCOMM, como master_pc/Robot.py)
 #   "/dev/rfcomm0"/"COM5"→ puerto serie (pyserial)
-ROBOT_ADDRESS = None
+ROBOT_ADDRESS = "00:1B:10:21:2C:34"
 RFCOMM_CHANNEL = 1
 BAUD_RATE = 115200
 
@@ -69,13 +69,16 @@ PULSE_FORWARD_S = 0.100             # Lo que dura 'w' en el firmware
 PULSE_TURN_S = 0.030                # Lo que dura 'a'/'d' en el firmware
 LINK_MARGIN_S = 0.010               # Holgura por latencia del Bluetooth
 MAX_TURN_PULSES = 4                 # [TB] Pulsos de giro por cada 'w' cuando |u| = 1
+ERROR_SMOOTHING = 0.7                # Peso del EMA del error (0.7 = lento, 0 = sin filtro)
+D_SMOOTHING = 0.8                 # Peso del filtrado derivativo (0.8 = lento, 0.5 = original)
+FORWARD_DUTY = 0.45                 # [TB] Fracción de ciclos que avanza (0=quieto, 1=sin acelerador)
 SPIN_THRESHOLD = 0.85               # |u| mayor → gira sin avanzar (curva cerrada)
 PULSE_COMMANDS = {                  # Por si el firmware entregado usa otras letras
     "forward": "w", "left": "a", "right": "d", "stop": "x",
 }
 
 # --- Driver "velocidades" ---
-BASE_SPEED = 150                    # [TB] 0-255
+BASE_SPEED = 50                    # [TB] 0-255
 MAX_SPEED = 255
 SPEED_FORMAT = "V:{left},{right}\n"  # Plantilla del mensaje
 SPEED_PERIOD_S = 0.05               # Un mensaje cada 50 ms (20 Hz)

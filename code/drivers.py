@@ -15,6 +15,15 @@ basta con escribir otro driver con el mismo método ``next()``.
 import config  # Parámetros del robot: tiempos de pulso, velocidades, formato de mensajes
 
 
+ACTION_LABELS = {
+    "forward": "ADELANTE",
+    "left":    "IZQUIERDA",
+    "right":   "DERECHA",
+    "back":    "ATRAS",
+    "stop":    "PARAR",
+}
+
+
 class PulseDriver:
     """
     Firmware del curso (arduinoFinal.ino): solo letras con pulsos fijos.
@@ -34,7 +43,9 @@ class PulseDriver:
         self.max_turn_pulses = config.MAX_TURN_PULSES       # Máx. pulsos de giro por cada avance cuando |u|=1
         self.deadband = config.DEADBAND                     # Zona muerta: |u| menor que esto → recto
         self.cmd = config.PULSE_COMMANDS                    # Diccionario de letras: {"forward":"w", "left":"a", ...}
+        self.forward_duty = config.FORWARD_DUTY               # Acelerador: fracción de ciclos que manda 'w'
         self._acc = 0.0                                     # Acumulador sigma-delta para la parte fraccionaria de giros
+        self._duty_acc = 0.0                                 # Acumulador sigma-delta del acelerador
         self._side = None                                   # Último lado de giro ('left' o 'right')
         self._queue = []                                    # Cola de acciones pendientes en el ciclo actual
         self._stopped = False                               # ¿Ya se envió el comando de parada?
@@ -42,8 +53,15 @@ class PulseDriver:
     def stop_message(self):          # Devuelve el mensaje para detener el robot
         return self.cmd["stop"]      # Letra 'x' (por defecto)
 
+    def describe(self, mensaje):
+        if mensaje is None:
+            return "-"
+        accion = {letra: nombre for nombre, letra in self.cmd.items()}.get(mensaje.strip())
+        return ACTION_LABELS.get(accion, f"?{mensaje.strip()}")
+
     def reset(self):                 # Reinicia el estado interno del driver
         self._acc = 0.0              # Borra el acumulador sigma-delta
+        self._duty_acc = 0.0          # Borra el acumulador del acelerador
         self._side = None            # Olvida el último lado de giro
         self._queue.clear()          # Vacía la cola de acciones
 
@@ -60,6 +78,8 @@ class PulseDriver:
             self._queue = self._plan_cycle(u)                         # Planifica un nuevo ciclo de acciones según u
         action = self._queue.pop(0)                                   # Saca la primera acción de la cola
 
+        if action == "idle":                                          # Espera del acelerador: no se manda nada
+            return None, config.PULSE_FORWARD_S + config.LINK_MARGIN_S, (0.0, 0.0, 0.0)
         if action == "forward":                                       # Si la acción es avanzar
             dur = config.PULSE_FORWARD_S                              # Duración del pulso de avance (ej: 100ms)
             motion = (config.SIM_FORWARD_CM_PER_S, 0.0, dur)         # Movimiento: velocidad lineal, sin giro
@@ -73,7 +93,7 @@ class PulseDriver:
         mag = abs(u)                                       # Magnitud del mando de giro (0 a 1)
         if mag < self.deadband:                            # Si está dentro de la zona muerta
             self._acc = 0.0                                # Resetea el acumulador
-            return ["forward"]                             # Solo avanza recto
+            return self._throttle(["forward"])             # Recto, con acelerador
 
         side = "right" if u > 0 else "left"                # Determina el lado de giro según el signo de u
         if side != self._side:                             # Si cambió de lado respecto al ciclo anterior
@@ -86,7 +106,22 @@ class PulseDriver:
 
         if mag >= config.SPIN_THRESHOLD:                   # Si |u| es muy grande (curva cerrada, ej: >0.85)
             return [side] * max(k, 1)                      # Solo gira sin avanzar (mínimo 1 pulso)
-        return [side] * k + ["forward"]                    # k pulsos de giro + 1 avance al final
+        return self._throttle([side] * k + ["forward"])    # k giros + 1 avance, con acelerador
+
+    def _throttle(self, acciones):
+        """
+        Sustituye el avance por una espera en algunos ciclos.
+
+        El firmware termina cada comando con stopMotors(), así que no mandar 'w'
+        es lo único que baja la velocidad: el firmware tiene speed=150 fijo.
+        Mismo sigma-delta del giro: la fracción se acumula y se reparte.
+        """
+        duty = min(max(self.forward_duty, 0.0), 1.0)
+        self._duty_acc += duty
+        if self._duty_acc >= 1.0:
+            self._duty_acc -= 1.0
+            return acciones
+        return acciones[:-1] + ["idle"] if acciones else ["idle"]
 
 
 class SpeedDriver:
@@ -108,6 +143,18 @@ class SpeedDriver:
 
     def stop_message(self):                                   # Devuelve el mensaje para detener el robot
         return config.SPEED_FORMAT.format(left=0, right=0)    # "V:0,0\n"
+
+    def describe(self, mensaje):
+        if mensaje is None:
+            return "-"
+        txt = mensaje.strip()
+        if txt == self.stop_message().strip():
+            return ACTION_LABELS["stop"]
+        try:
+            izq, der = txt.split(":", 1)[1].split(",")
+            return f"IZQ {int(izq)} / DER {int(der)}"
+        except (IndexError, ValueError):
+            return f"?{txt}"
 
     def reset(self):          # No tiene estado interno que reiniciar
         pass                  # (a diferencia de PulseDriver que tiene acumulador)

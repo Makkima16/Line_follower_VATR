@@ -61,15 +61,83 @@ if not logger.handlers:
 #  UTILIDADES
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _interface_ips():
+    """IP IPv4 de cada interfaz, sin loopback ni link-local."""
+    ips = {}
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr"],
+                             capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ips
+    for line in out.splitlines():
+        parts = line.split()
+        if "inet" not in parts:
+            continue
+        iface, ip = parts[1], parts[3].split("/")[0]
+        if not ip.startswith(("127.", "169.254.")):
+            ips[iface] = ip
+    return ips
+
+
+def _default_interface():
+    """Interfaz de la ruta por defecto (la que sale a internet)."""
+    try:
+        out = subprocess.run(["ip", "route", "show", "default"],
+                             capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    parts = out.split()
+    return parts[parts.index("dev") + 1] if "dev" in parts else None
+
+
+def _peered_interfaces():
+    """Interfaces que ya tienen algún vecino en la tabla ARP."""
+    peers = {}
+    try:
+        with open("/proc/net/arp", encoding="utf-8") as f:
+            next(f, None)
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 6:
+                    peers.setdefault(parts[5], []).append(parts[0])
+    except OSError:
+        pass
+    return peers
+
+
+def get_local_ips():
+    """
+    IPs del PC que un celular puede alcanzar, en orden de probabilidad.
+
+    Conectar a 8.8.8.8 solo devuelve la IP de la ruta por defecto, que cuando
+    el PC arma su propio hotspot es la ethernet y el celular no la resuelve.
+    Se prioriza entonces la interfaz que tiene vecinos y no es la de salida:
+    esa es la red donde está colgado el teléfono.
+    """
+    ips = _interface_ips()
+    if not ips:
+        return []
+    peers = _peered_interfaces()
+    default_if = _default_interface()
+
+    local = [ip for iface, ip in ips.items()
+             if iface != default_if and peers.get(iface)]
+    rest = [ip for iface, ip in ips.items() if ip not in local]
+    return local + rest
+
+
 def get_local_ip():
-    """Obtiene la IP local del PC en la red WiFi."""
+    """IP principal que debe usar el celular para conectarse."""
+    candidates = get_local_ips()
+    if candidates:
+        return candidates[0]
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except Exception:
+    except OSError:
         return "127.0.0.1"
 
 
@@ -360,7 +428,10 @@ class PhoneCameraCapture:
         print(f"  La página te guiará paso a paso.")
         print()
         print(f"  (Servidor HTTPS en: {https_url})")
-        print(f"  (Asegúrate de estar en la misma red WiFi)")
+        alternas = [ip for ip in get_local_ips()[1:]]
+        if alternas:
+            print(f"  Otras IPs del PC: {', '.join(alternas)}")
+        print(f"  (Si no carga, prueba con otra IP de la lista o usa el hotspot del PC)")
         print("=" * 60)
         print()
 

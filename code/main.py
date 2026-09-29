@@ -62,6 +62,7 @@ def create_trackbars(driver):
     cv2.createTrackbar("Kd x100", WIN_TUNE, int(config.KD * 100), 200, nop)
     cv2.createTrackbar("Zona muerta x100", WIN_TUNE, int(config.DEADBAND * 100), 50, nop)
     cv2.createTrackbar("Giros max", WIN_TUNE, config.MAX_TURN_PULSES, 10, nop)
+    cv2.createTrackbar("Acelerador %", WIN_TUNE, int(config.FORWARD_DUTY * 100), 100, nop)
     cv2.createTrackbar("Vel. base", WIN_TUNE, config.BASE_SPEED, config.MAX_SPEED, nop)
     cv2.createTrackbar("Dur. PARE [s]", WIN_TUNE, int(config.STOP_DURATION_S), 10, nop)
 
@@ -81,6 +82,7 @@ def read_trackbars(brain):
         driver.deadband = tb("Zona muerta x100") / 100.0
         if driver.name == "pulsos":
             driver.max_turn_pulses = max(1, tb("Giros max"))
+            driver.forward_duty = tb("Acelerador %") / 100.0
         else:
             driver.base = tb("Vel. base")
         brain.stop_duration = float(tb("Dur. PARE [s]"))
@@ -93,6 +95,14 @@ def read_trackbars(brain):
 #  OVERLAY DE DEPURACIÓN
 # ─────────────────────────────────────────────────────────────────────────────
 # Color (BGR) con que se escribe cada estado en pantalla
+CMD_COLORS = {
+    "ADELANTE":  (0, 210, 0),
+    "IZQUIERDA": (0, 210, 255),
+    "DERECHA":   (255, 150, 0),
+    "ATRAS":     (220, 0, 220),
+    "PARAR":     (0, 0, 255),
+}
+
 STATE_COLORS = {
     State.SIGUIENDO: (0, 200, 0),
     State.BUSCANDO: (0, 140, 255),
@@ -111,7 +121,8 @@ def put_text(img, text, org, color=(255, 255, 255), scale=0.55):
     cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1, cv2.LINE_AA)
 
 
-def draw_overlay(frame, line, roi_ratio, snap, last_msg, fps, scale, signal=None):
+def draw_overlay(frame, line, roi_ratio, snap, last_msg, fps, scale, signal=None,
+                 driver=None):
     """
     Dibuja la información de depuración sobre una copia reescalada del frame:
     límite de la ROI, contornos y centroides de la línea, señal detectada,
@@ -177,13 +188,14 @@ def draw_overlay(frame, line, roi_ratio, snap, last_msg, fps, scale, signal=None
     label = "PAUSA" if snap["paused"] else state.value
     put_text(view, f"{label} | {snap['nav_mode']}", (10, 24),
              STATE_COLORS.get(state, (255, 255, 255)), 0.7)
-    msg = (last_msg or "-").strip()
-    put_text(view, f"e={snap['error']:+.2f}  u={snap['u']:+.2f}  cmd={msg}", (10, 50))
+    put_text(view, f"e={snap['error']:+.2f}  u={snap['u']:+.2f}", (10, 50))
+    cmd = driver.describe(last_msg) if driver is not None else "-"
+    put_text(view, cmd, (10, 78), CMD_COLORS.get(cmd, (255, 255, 255)), 0.8)
     # Mostrar señal activa en el HUD
     sig_label = snap.get("signal")
     if sig_label:
         sig_c = (0, 0, 255) if sig_label == "PARE" else (0, 200, 0)
-        put_text(view, f"Senal: {sig_label}", (10, 76), sig_c, 0.55)
+        put_text(view, f"Senal: {sig_label}", (10, 104), sig_c, 0.55)
     put_text(view, f"{fps:4.1f} FPS", (vw - 95, 24))
     return view
 
@@ -285,7 +297,7 @@ def run(cap, brain, sender, preview, args):
 
         cv2.imshow(WIN_VIEW, draw_overlay(frame, line, roi_ratio, brain.snapshot(),
                                           sender.last_message, fps, args.escala,
-                                          signal))
+                                          signal, brain.driver))
         # CRÍTICO: si no hay línea, line es None y line.binary daría AttributeError
         if line is not None:
             cv2.imshow(WIN_MASK, line.binary)

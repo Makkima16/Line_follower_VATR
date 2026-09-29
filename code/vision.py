@@ -171,8 +171,22 @@ def detect_line(frame, threshold, roi_ratio=None, near_weight=None, prev_x=None)
 
     # Error = mezcla ponderada de la desviación cercana y lejana respecto al centro,
     # dividida entre la mitad del ancho para dejarla en [-1, 1].
+    #
+    # La x se evalúa sobre una recta ajustada por mínimos cuadrados a TODOS los
+    # centroides de franja, no solo el primero y el último: con N franjas el ruido
+    # del error baja como 1/raíz(N) y el centrado de la curva mejora, porque la
+    # trayectoria entera pesa en vez de solo sus extremos. El punto cercano real
+    # (sin ajustar) se sigue usando para buscar salidas de pista.
     center = w / 2.0
-    near_x, far_x = points[0][0], points[-1][0]
+    ys = np.array([p[1] for p in points], dtype=float)
+    xs = np.array([p[0] for p in points], dtype=float)
+    grado = min(2, len(points) - 1)
+    if grado >= 1:
+        coef = np.polyfit(ys, xs, grado)
+        near_x = float(np.polyval(coef, ys[0]))
+        far_x = float(np.polyval(coef, ys[-1]))
+    else:
+        near_x = far_x = xs[0]
     error_px = near_weight * (near_x - center) + (1.0 - near_weight) * (far_x - center)
     error = float(np.clip(error_px / center, -1.0, 1.0))
 

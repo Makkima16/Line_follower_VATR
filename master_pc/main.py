@@ -3,7 +3,8 @@ from Robot import Robot
 
 
 def main():
-    robot = Robot("00:1B:10:21:2C:1B")
+    # robot = Robot("00:1B:10:21:2C:1B")
+    robot = Robot("00:1B:10:31:0A:AB")
     camara = cv2.VideoCapture(0)
 
     try:
