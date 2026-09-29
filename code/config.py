@@ -29,7 +29,7 @@ N_SLICES = 5                        # Franjas horizontales dentro de la ROI
 MIN_BLOB_AREA_RATIO = 0.01          # Área mínima de un trozo de línea (fracción de la franja)
 MAX_JUMP_RATIO = 0.25               # Salto horizontal máx. entre franjas (fracción del ancho)
 NEAR_WEIGHT = 0.6                   # [TB] Peso del punto cercano frente al lejano en el error
-BINARY_THRESHOLD = 80               # [TB] 0 = Otsu automático
+BINARY_THRESHOLD = 115              # [TB] 0 = Otsu automático
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CONTROL PD
@@ -94,20 +94,65 @@ SIM_WHEEL_BASE_CM = 11.5            # Distancia entre ruedas del mBot
 RED_HUE1_LOW, RED_HUE1_HIGH = 0, 10
 RED_HUE2_LOW, RED_HUE2_HIGH = 170, 180
 GREEN_HUE_LOW, GREEN_HUE_HIGH = 45, 90
-SIGNAL_MIN_SAT = 60          # S mínima para considerar un color "saturo"
+SIGNAL_MIN_SAT = 60          # S mínima por píxel para entrar en la máscara
+SIGNAL_MIN_MEAN_SAT = 90     # S promedio dentro del contorno: señal pintada ≈ 150, madera/piel ≈ 40
 SIGNAL_MIN_VAL = 60          # V mínima
-MIN_SIGNAL_AREA = 0.005      # Área mínima de la señal (fracción del frame total)
+MIN_SIGNAL_AREA = 0.003      # Área mínima de la señal (fracción del frame total)
+SIGNAL_MIN_SOLIDITY = 0.80   # área/área_casco: polígonos regulares ≈ 0.95; descarta madera, sombras
+SIGNAL_ASPECT_RANGE = (0.6, 1.6)   # ancho/alto del bounding box (un polígono regular ≈ 1)
+PARE_VERTICES = (4, 9)       # Rojo: rombo/cuadrado (4), hexágono (6) u octágono (8), con tolerancia
+SIGA_VERTICES = (4, 9)       # Verde: rombo/cuadrado (4) u octágono (8)
+# Con 4 vértices la relación de aspecto (SIGNAL_ASPECT_RANGE) y la solidez son las
+# que descartan tiras de papel o rectángulos alargados del mismo color.
 SIGNAL_CONFIRM_FRAMES = 3    # N° de frames consecutivos para confirmar detección
-STOP_DURATION_S = 3.0        # Tiempo que el robot se detiene ante PARE (docente/trackbar)
-SIGNAL_COOLDOWN_S = 2.0      # Ignorar la misma señal X s después de actuar
+STOP_DURATION_S = 3.0        # [TB] Tiempo que el robot se detiene ante PARE
+SIGNAL_COOLDOWN_S = 1.0      # La señal debe DESAPARECER este tiempo antes de volver a actuar
+                             # (si no, al reanudar la vería otra vez y pararía para siempre)
 SIGNAL_COVER_GRACE_S = 0.8   # Si la línea desaparece justo después de ver señal,
                              # se asume que está tapada → seguir recto X s
-EPSILON_POLYDP_RATIO = 0.03  # Ratio del perímetro para approxPolyDP (7-9 vértices)
-# Cámara virtual: trapecio de piso que ve, medido desde el centro del robot.
+EPSILON_POLYDP_RATIO = 0.03  # epsilon de approxPolyDP como fracción del perímetro
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  RAMIFICACIONES Y MAPA (mapa.py)
+# ─────────────────────────────────────────────────────────────────────────────
+# Salidas de la línea por el borde del FRAME completo (izq., arriba, der.). Solo es
+# camino lo que sale de la imagen; un brazo que termina a la vista (barra transversal)
+# no cuenta:
+#   1 salida  → tramo normal      2+ salidas → ramificación
+#   0 salidas → la línea termina a la vista → posible callejón sin salida
+MIN_EXIT_PX = 4                     # Largo mínimo de un tramo blanco en el borde para contar como salida
+EXIT_MERGE_RATIO = 1.0              # Tramos separados por menos de este × ancho de la línea son UNA salida
+                                    # (un brillo en la cinta hace una muesca y parte la salida en dos)
+ENTRY_SIDE_RATIO = 0.20             # Lo que toca los lados en este % inferior del frame es la entrada, no una salida
+JUNCTION_CONFIRM_FRAMES = 2         # Frames seguidos con 2+ salidas para aceptar la ramificación
+CROSSBAR_WIDTH_RATIO = 2.5          # Fila de la mancha así de ancha (× ancho de línea) y cerrada = barra transversal
+CROSSBAR_IGNORE_CM = 70.0           # Tras ver una barra entera, no aceptar cruces estos cm (hasta pasarla)
+DEAD_END_FRAMES = 5                 # Frames seguidos con 0 salidas para aceptar el callejón
+DEAD_END_REACH = 0.70               # ...y la línea no pasa de este % de la altura del frame
+                                    # (se ve piso vacío más allá del final: no hay por dónde seguir)
+BRANCH_POLICY = "izquierda"         # Orden de exploración: "izquierda", "derecha" o "recto"
+BRANCH_MATCH_DEG = 50.0             # Tolerancia para reconocer una rama ya vista por su rumbo
+NODE_MATCH_CM = 30.0                # Radio para reconocer un cruce ya visitado por odometría
+COMMIT_CM = 35.0                    # Tras decidir en un cruce, se mantiene la rama elegida estos cm
+COMMIT_MAX_FRAMES = 120             # ...o como máximo estos frames (≈6 s): nunca quedarse trabado
+HEADING_FIX_GAIN = 0.7              # Al volver a un cruce, cuánto se corrige el rumbo de la odometría (0-1)
+NODE_REACH_CM = 4.0                 # Si la rama elegida no se ve, avanzar hasta el cruce y girar ahí
+STEER_FULL_DEG = 40.0               # Ángulo hacia la rama que equivale a error = ±1
+UTURN_U = 1.0                       # Mando de giro durante la media vuelta (giro en sitio)
+UTURN_MIN_DEG = 140.0               # No aceptar la línea hasta haber girado esto (sigue viendo el callejón)
+UTURN_MAX_DEG = 400.0               # Más de una vuelta sin encontrar línea → BUSCANDO
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  CÁMARA SOBRE EL PISO
+# ─────────────────────────────────────────────────────────────────────────────
+# Trapecio de piso que ve la cámara, medido desde el centro del robot.
+# Lo usan el simulador (cámara virtual) Y el mapa (pasar píxeles a cm con una
+# homografía). En el robot real: poner una hoja en el piso y medir estas 4 cotas.
 SIM_CAM_NEAR_CM = 8.0               # Distancia al borde inferior de la imagen
 SIM_CAM_DEPTH_CM = 25.0             # Profundidad del campo de visión
 SIM_CAM_NEAR_WIDTH_CM = 16.0        # Ancho visto en el borde inferior
 SIM_CAM_FAR_WIDTH_CM = 32.0         # Ancho visto en el borde superior (perspectiva)
 SIM_CAM_HEIGHT_PX = 240             # Alto del frame virtual (ancho = PROCESS_WIDTH)
+SIM_MAP_WIDTH_CM = 120.0             # Ancho del mapa del simulador en cm
 SIM_CAM_FPS = 20.0                  # Frames por segundo de la cámara virtual
 SIM_LATENCY_S = 0.10                # Retraso cámara→decisión (WiFi + procesamiento)

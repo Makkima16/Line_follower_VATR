@@ -23,13 +23,17 @@ Seguidor/
 ├── README.md
 ├── requirements.txt
 ├── pistas/                 Fotos cenitales de pistas para el simulador
-│   └── zigzag.jpeg
+│   ├── zigzag.jpeg
+│   ├── signals.jpeg        Bifurcación en Y con hexágono rojo (PARE) en el tronco
+│   └── ramificacion.png    Pista sintética: PARE + bifurcación con una rama sin salida
 └── code/
     ├── main.py             Punto de entrada: cámara real + robot (o robot simulado)
     ├── simulador.py        Simulador de lazo cerrado sobre una foto de la pista
     ├── config.py           TODAS las constantes (cámara, visión, PD, robot, simulador)
     ├── vision.py           Detección de la línea: umbral, morfología, contornos, centroides
-    ├── control.py          Control PD + máquina de estados (siguiendo / buscando / detenido)
+    ├── control.py          Control PD + máquina de estados (siguiendo / buscando / PARE / media vuelta...)
+    ├── mapa.py             Odometría + mapa de cruces + exploración en profundidad (DFS)
+    ├── senales.py          Señales: hexágono/octágono rojo (PARE), octágono verde (SIGA)
     ├── drivers.py          Traduce el mando u ∈ [-1, 1] al protocolo del robot
     ├── robot.py            Conexión (Bluetooth RFCOMM o serie) + hilo de envío
     ├── sim.py              Ventana "Movimiento" (trayectoria según los comandos enviados)
@@ -85,6 +89,7 @@ Otras fuentes de video: `--camara usb` (webcam del PC) o `--video pista.mp4`.
 cd code
 ../.venv/bin/python simulador.py ../pistas/zigzag.jpeg
 ../.venv/bin/python simulador.py ../pistas/zigzag.jpeg --ancho-cm 200 --driver velocidades
+../.venv/bin/python simulador.py ../pistas/ramificacion.png    # PARE + ramificación + callejón
 ```
 
 Toma una **foto cenital** de la pista como piso y pone encima un robot virtual.
@@ -116,6 +121,9 @@ se puede calibrar Kp, Kd, umbral, etc. sin tener el robot.
 - **Calibracion:** trackbars para ajustar en vivo umbral, ROI, peso cercano, Kp, Kd,
   zona muerta y giros máx. / velocidad base.
 - **Movimiento** (`main.py`) / **Mapa** (`simulador.py`): trayectoria del robot.
+- **Mapa (odometria):** lo que el robot *recuerda*: su rastro estimado, cada cruce
+  (`N0`, `N1`…; amarillo = en la pila) y sus ramas: blanca = pendiente, verde =
+  explorando, roja = sin salida, azul = origen.
 
 ---
 
@@ -151,9 +159,31 @@ se puede calibrar Kp, Kd, umbral, etc. sin tener el robot.
   - `BUSCANDO`: la línea se perdió más de `LOST_GRACE_S`. Gira hacia el último lado
     donde se vio (failsafe, objetivo: 0 intervenciones).
   - `DETENIDO`: sin línea durante `LOST_STOP_S`. Se para por seguridad.
+  - `PARE`: hexágono u octágono rojo confirmado `SIGNAL_CONFIRM_FRAMES` frames. Se
+    detiene `STOP_DURATION_S` y reanuda solo (o antes, si ve un octágono verde SIGA).
+    La señal no vuelve a actuar hasta que deja de verse `SIGNAL_COOLDOWN_S`.
+  - `MEDIA VUELTA`: callejón sin salida; gira en sitio hasta volver a la línea.
+  - `FIN`: ya no queda ninguna rama por explorar.
 - Todos los tiempos usan `time.monotonic()`, así que nada bloquea el video.
 
-### 3. Drivers (`drivers.py`): de `u` a comandos
+### 3. Ramificaciones y mapa (`vision.find_exits`, `mapa.py`)
+
+- **Salidas:** se toma la mancha de línea que se sigue y se recorre el borde de la ROI
+  (izquierda ↑, arriba →, derecha ↓) como una tira 1-D. Cada tramo blanco es una
+  **salida**: 1 = tramo normal, 2+ = **ramificación**, 0 con la línea terminando en la
+  mitad cercana y sin otro trozo a la vista = **callejón sin salida**.
+- **Píxeles → cm:** con `cv2.getPerspectiveTransform` (las 4 esquinas del frame ↔ el
+  trapecio de piso `SIM_CAM_*`) cada salida se pasa a cm y se obtiene el **rumbo** de la
+  rama: `rumbo = θ − atan2(derecha, adelante)`.
+- **Odometría:** sin encoders, la pose se integra con los mismos comandos enviados
+  (`x += v·cosθ·dt`, `y += v·sinθ·dt`, `θ += ω·dt`).
+- **Mapa y DFS:** cada cruce es un nodo con sus ramas (pendiente / explorando /
+  sin salida / origen). En un cruce nuevo se toma una rama según `BRANCH_POLICY`; en un
+  callejón se marca la rama, media vuelta y se regresa al último cruce de la pila, donde
+  se toma la siguiente rama pendiente. Si el cruce se agota, se sale por su origen y se
+  sigue retrocediendo. Al reconocer un cruce se corrige la deriva de posición y rumbo.
+
+### 4. Drivers (`drivers.py`): de `u` a comandos
 
 - **`pulsos`** (firmware del curso, letras `w/a/d/x`, pulsos de duración fija): como no
   hay control de velocidad, el giro proporcional se consigue en el tiempo. Por cada
@@ -164,14 +194,14 @@ se puede calibrar Kp, Kd, umbral, etc. sin tener el robot.
   `izq = base·(1+u)`, `der = base·(1−u)`, saturadas a `[0, MAX_SPEED]` y enviadas
   cada `SPEED_PERIOD_S`.
 
-### 4. Concurrencia (`robot.py`, `main.py`)
+### 5. Concurrencia (`robot.py`, `main.py`)
 
 - **Hilo principal:** cámara → visión → `Brain.on_frame()` → ventanas.
 - **Hilo `CommandSender`:** `Brain.next_command()` → driver → Bluetooth, al ritmo que
   marca el driver. La cámara nunca espera al Bluetooth ni al revés.
 - Al salir se envía siempre el comando de parada.
 
-### 5. Simulador (`simulador.py`)
+### 6. Simulador (`simulador.py`)
 
 La cámara del celular mira adelante y abajo, así que ve un **trapecio** de piso
 (angosto cerca, ancho lejos). Con la pose del robot `(x, y, θ)` se calculan las 4
@@ -197,6 +227,11 @@ en vivo con los trackbars.
 | `KD` | Amortiguación. Súbelo si se pasa de la línea después de cada curva. |
 | `DEADBAND` | Errores más pequeños que esto se ignoran (va recto). |
 | `RECOVERY_U`, `LOST_*` | Comportamiento cuando pierde la línea. |
+| `PARE_VERTICES`, `SIGNAL_MIN_MEAN_SAT`, `MIN_SIGNAL_AREA` | Qué cuenta como señal PARE (vértices, color, tamaño). |
+| `BRANCH_POLICY` | En qué orden se prueban las ramas: `izquierda`, `derecha` o `recto`. |
+| `DEAD_END_*`, `JUNCTION_CONFIRM_FRAMES` | Qué tan seguro debe estar para declarar callejón / cruce. |
+| `SIM_CAM_*` | Trapecio de piso que ve la cámara. **Medirlo en el robot real**: lo usa el mapa. |
+| `SIM_FORWARD_CM_PER_S`, `SIM_TURN_DEG_PER_S` | Base de la odometría. Calibrar: mandar `w`/`a` N veces y medir cm y grados reales. |
 
 ### Al recibir el robot (sección **ROBOT** de `config.py`)
 

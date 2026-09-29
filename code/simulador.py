@@ -24,6 +24,7 @@ rápido que corra la máquina y se pueden repetir.
 Uso:
   python simulador.py ../pistas/zigzag.jpeg
   python simulador.py pista.jpg --ancho-cm 200 --driver velocidades
+  python simulador.py ../pistas/final.jpeg --ancho-cm 155 --inicio 807 1300 87
 
 Teclas: q = salir, espacio = pausa, r = reiniciar, + / - = más/menos rápido.
 Ratón (ventana "Mapa"): clic = posición inicial, segundo clic = hacia dónde mira.
@@ -37,6 +38,8 @@ import cv2
 import numpy as np
 
 import config
+import mapa
+import senales
 import vision
 from control import Brain, State
 from drivers import DRIVERS, make_driver
@@ -44,6 +47,7 @@ from main import WIN_TUNE, create_trackbars, draw_overlay, read_trackbars
 
 WIN_MAP = "Mapa"
 WIN_CAM = "Camara virtual"
+WIN_ODOM = "Mapa (odometria)"
 MAP_VIEW_H = 720          # Alto de la ventana del mapa (px de pantalla)
 STEP_S = 0.005            # Paso de integración de la cinemática
 
@@ -71,16 +75,21 @@ def camera_footprint(pos, theta, px_per_cm):
 
 
 class VirtualCamera:
+    """Cámara falsa: "fotografía" el trozo de mapa que vería el celular del robot."""
+
     def __init__(self, track, px_per_cm):
         self.track = track
         self.px_per_cm = px_per_cm
         self.w, self.h = config.PROCESS_WIDTH, config.SIM_CAM_HEIGHT_PX
+        # Esquinas destino = esquinas del frame (CRÍTICO: float32, getPerspectiveTransform no acepta otro tipo)
         self.dst = np.float32([[0, 0], [self.w, 0], [self.w, self.h], [0, self.h]])
         # Fuera del mapa se ve "papel": el color mediano de la foto
         self.paper = tuple(int(c) for c in np.median(track.reshape(-1, 3), axis=0))
 
     def capture(self, pos, theta):
+        """Devuelve el frame que vería la cámara con el robot en pos mirando a theta."""
         src = camera_footprint(pos, theta, self.px_per_cm)
+        # Homografía 3x3 que lleva el trapecio del piso al rectángulo del frame
         m = cv2.getPerspectiveTransform(src, self.dst)
         return cv2.warpPerspective(self.track, m, (self.w, self.h),
                                    flags=cv2.INTER_LINEAR,
@@ -100,6 +109,7 @@ def auto_start(track, px_per_cm):
     mask = vision.line_mask(track, config.BINARY_THRESHOLD)
     cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     h, w = track.shape[:2]
+    # Sin contornos: pose por defecto (abajo al centro, mirando arriba) en vez de fallar en max()
     if not cnts:
         return np.array([w / 2, h * 0.9]), math.pi / 2
 
@@ -107,6 +117,7 @@ def auto_start(track, px_per_cm):
         x, _, cw, _ = cv2.boundingRect(c)
         return x <= 2 or x + cw >= w - 2
 
+    # "or cnts": si todos tocan el borde se usan todos (evita max() sobre una lista vacía)
     inner = [c for c in cnts if not touches_side(c)] or cnts
     pts = max(inner, key=cv2.contourArea).reshape(-1, 2).astype(float)
     tip = pts[np.argmax(pts[:, 1])]
@@ -123,6 +134,11 @@ def auto_start(track, px_per_cm):
 #  SIMULACIÓN
 # ─────────────────────────────────────────────────────────────────────────────
 class Simulation:
+    """
+    Mundo simulado: pose del robot, reloj propio, Brain y cámara virtual.
+    Reproduce los dos hilos de main.py (video y envío) pero en un solo bucle.
+    """
+
     def __init__(self, track, px_per_cm, driver_name, start):
         self.cam = VirtualCamera(track, px_per_cm)
         self.px_per_cm = px_per_cm
@@ -131,6 +147,7 @@ class Simulation:
         self.reset()
 
     def reset(self, start=None):
+        """Vuelve a la pose inicial (o a una nueva) y crea un Brain limpio."""
         if start is not None:
             self.start = start
         self.pos = np.array(self.start[0], float)
@@ -148,14 +165,20 @@ class Simulation:
         self.distance_cm = 0.0
         self.losses = 0
         self._was_found = True
+        self.last_signal = None
 
     def _integrate(self, h):
-        v, w_deg = self.motion if self.t < self.motion_until else (0.0, 0.0)
-        if v or w_deg:
+        """Avanza la física h segundos con el modelo uniciclo (x += v·cosθ·h, θ += ω·h)."""
+        # El comando solo actúa durante su duración; después el robot queda quieto.
+        # Se integra solo la parte del paso que cae dentro del comando (si no,
+        # un pulso de 30 ms con pasos de 5 ms podía durar un paso de más).
+        v, w_deg = self.motion
+        active = min(h, max(0.0, self.motion_until - self.t))
+        if active > 0 and (v or w_deg):
             fwd, _ = axes(self.theta)
-            self.pos += fwd * v * self.px_per_cm * h
-            self.theta += math.radians(w_deg) * h
-            self.distance_cm += abs(v) * h
+            self.pos += fwd * v * self.px_per_cm * active
+            self.theta += math.radians(w_deg) * active
+            self.distance_cm += abs(v) * active
         self.t += h
 
     def advance_one_frame(self, threshold, roi_ratio, near_weight):
@@ -171,7 +194,8 @@ class Simulation:
 
             # La decisión llega al Brain con retraso (WiFi + procesamiento)
             while self.pending and self.pending[0][0] <= self.t:
-                _, line = self.pending.popleft()
+                _, line, label, partial = self.pending.popleft()
+                self.brain.on_signal(label, self.t, partial)
                 self.brain.on_frame(line, now=self.t)
                 if self._was_found and line is None:
                     self.losses += 1
@@ -184,20 +208,28 @@ class Simulation:
                 frame = self.cam.capture(self.pos, self.theta)
                 line = vision.detect_line(frame, threshold, roi_ratio, near_weight, self.prev_x)
                 self.prev_x = line.points[0][0] if line is not None else None
-                self.pending.append((self.t + config.SIM_LATENCY_S, line))
+                signal = senales.detect_signal(frame)
+                self.pending.append((self.t + config.SIM_LATENCY_S, line,
+                                     signal.label if signal is not None else None,
+                                     signal is not None and signal.partial))
                 if np.linalg.norm(self.pos - self.trail[-1]) > 2:
                     self.trail.append(self.pos.copy())
+                self.last_signal = signal
                 return frame, line
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  DIBUJO
 # ─────────────────────────────────────────────────────────────────────────────
+# CRÍTICO: debe tener un color para cada estado que pueda aparecer en draw_map,
+# si falta uno (ej. State.PARE) la búsqueda STATE_COLORS[...] da KeyError.
 STATE_COLORS = {State.SIGUIENDO: (0, 200, 0), State.BUSCANDO: (0, 140, 255),
-                State.DETENIDO: (0, 0, 255)}
+                State.DETENIDO: (0, 0, 255), State.PARE: (0, 0, 220),
+                State.MEDIA_VUELTA: (255, 0, 255), State.FIN: (200, 200, 200)}
 
 
 def draw_map(track, sim, scale, speed, clicked):
+    """Dibuja el mapa con el rastro, el campo de visión de la cámara, el robot y los datos."""
     view = cv2.resize(track, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     to_px = lambda p: (int(p[0] * scale), int(p[1] * scale))
 
@@ -235,29 +267,44 @@ def draw_map(track, sim, scale, speed, clicked):
 #  PRINCIPAL
 # ─────────────────────────────────────────────────────────────────────────────
 def parse_args():
+    """Lee la imagen del mapa, su ancho real en cm y el driver a usar."""
     p = argparse.ArgumentParser(description="Simulador de lazo cerrado del seguidor")
     p.add_argument("mapa", help="Foto cenital de la pista (línea oscura sobre fondo claro)")
     p.add_argument("--ancho-cm", type=float, default=config.SIM_MAP_WIDTH_CM,
                    help="Ancho real que representa la imagen (escala del mapa)")
     p.add_argument("--driver", choices=list(DRIVERS), default=config.DRIVER)
+    p.add_argument("--inicio", nargs=3, type=float, metavar=("X", "Y", "ANG"),
+                   help="Pose inicial: X Y en píxeles de la foto y ANG en grados "
+                        "(0 = derecha, 90 = arriba, 180 = izquierda, 270 = abajo). "
+                        "Sin esto se usa auto_start (solo sirve si la línea tiene extremos).")
     return p.parse_args()
 
 
 def main():
+    """Carga el mapa, crea la simulación y corre el bucle de ventanas/teclado."""
     args = parse_args()
     track = cv2.imread(args.mapa)
+    # CRÍTICO: imread no lanza error si el archivo no existe, devuelve None;
+    # sin esta comprobación fallaría más adelante con un error confuso.
     if track is None:
         raise SystemExit(f"No se pudo leer el mapa: {args.mapa}")
+    # Escala del mapa: píxeles de la foto por cada cm real
     px_per_cm = track.shape[1] / args.ancho_cm
     scale = MAP_VIEW_H / track.shape[0]
 
-    sim = Simulation(track, px_per_cm, args.driver, auto_start(track, px_per_cm))
+    if args.inicio is not None:
+        x, y, ang = args.inicio
+        start = (np.array([x, y]), math.radians(ang))
+    else:
+        start = auto_start(track, px_per_cm)
+    sim = Simulation(track, px_per_cm, args.driver, start)
     create_trackbars(sim.brain.driver)
     cv2.namedWindow(WIN_MAP)
 
     clicks = {"pos": None, "new_start": None}
 
     def on_mouse(event, x, y, _flags, _param):
+        """Primer clic = posición inicial; segundo clic = hacia dónde mira el robot."""
         if event != cv2.EVENT_LBUTTONDOWN:
             return
         p = np.array([x / scale, y / scale])
@@ -284,9 +331,13 @@ def main():
         frame, line = sim.advance_one_frame(threshold, roi_ratio, near_weight)
 
         cv2.imshow(WIN_CAM, draw_overlay(frame, line, roi_ratio, sim.brain.snapshot(),
-                                         sim.last_msg, config.SIM_CAM_FPS, config.DISPLAY_SCALE))
+                                         sim.last_msg, config.SIM_CAM_FPS, config.DISPLAY_SCALE,
+                                         sim.last_signal))
         cv2.imshow(WIN_MAP, draw_map(track, sim, scale, speed, clicks["pos"]))
+        cv2.imshow(WIN_ODOM, mapa.draw_map(sim.brain.map_snapshot()))
 
+        # CRÍTICO: max(1, ...) porque waitKey(0) espera una tecla para siempre
+        # y congelaría la simulación.
         key = cv2.waitKey(max(1, int(1000 / (config.SIM_CAM_FPS * speed)))) & 0xFF
         if key == ord("q"):
             break
