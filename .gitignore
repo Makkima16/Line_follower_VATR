@@ -1,0 +1,30 @@
+# ── Python ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ── Entornos virtuales ──────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Certificados SSL auto-generados (atados a la IP local) ──
+.ssl/
+*.pem
+
+# ── Editores / sistema ──────────────────────────────────
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ── Grabaciones y capturas de prueba ────────────────────
+*.mp4
+*.avi
+*.mov
+capturas/
+
+# ── Claude Code (config local) ──────────────────────────
+.claude/

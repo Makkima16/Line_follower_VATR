@@ -1,0 +1,4 @@
+opencv-python>=4.8
+numpy>=1.24
+aiohttp>=3.9       # Servidor que recibe la cámara del celular
+pyserial>=3.5      # Solo si el robot se conecta por puerto serie
