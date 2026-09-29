@@ -24,6 +24,7 @@ import numpy as np
 
 import config
 import vision
+import senales
 from control import Brain, State
 from drivers import DRIVERS, make_driver
 from robot import CommandSender, Robot
@@ -48,10 +49,9 @@ def create_trackbars(driver):
     cv2.createTrackbar("Kp x100", WIN_TUNE, int(config.KP * 100), 400, nop)
     cv2.createTrackbar("Kd x100", WIN_TUNE, int(config.KD * 100), 200, nop)
     cv2.createTrackbar("Zona muerta x100", WIN_TUNE, int(config.DEADBAND * 100), 50, nop)
-    if driver.name == "pulsos":
-        cv2.createTrackbar("Giros max", WIN_TUNE, config.MAX_TURN_PULSES, 10, nop)
-    else:
-        cv2.createTrackbar("Vel. base", WIN_TUNE, config.BASE_SPEED, config.MAX_SPEED, nop)
+    cv2.createTrackbar("Giros max", WIN_TUNE, config.MAX_TURN_PULSES, 10, nop)
+    cv2.createTrackbar("Vel. base", WIN_TUNE, config.BASE_SPEED, config.MAX_SPEED, nop)
+    cv2.createTrackbar("Dur. PARE [s]", WIN_TUNE, int(config.STOP_DURATION_S), 10, nop)
 
 
 def read_trackbars(brain):
@@ -187,6 +187,12 @@ def run(cap, brain, sender, preview, args):
         threshold, roi_ratio, near_weight = read_trackbars(brain)
         line = vision.detect_line(frame, threshold, roi_ratio, near_weight, prev_x)
         prev_x = line.points[0][0] if line is not None else None
+
+        # Detección de señales de tráfico (objetivos 5 y 6)
+        signal = senales.detect_signal(frame)
+        if signal is not None:
+            brain.on_signal(signal.label, time.monotonic())
+
         brain.on_frame(line)
 
         n += 1
@@ -206,6 +212,26 @@ def run(cap, brain, sender, preview, args):
             brain.set_paused(not brain.snapshot()["paused"])
         if key == ord("r"):
             preview.reset()
+
+        # Manejo del estado PARE: detener el robot el tiempo que fije el docente
+        if brain.state == State.PARE:
+            # Leer duración actual de la trackbar (0-10 segundos)
+            config.STOP_DURATION_S = cv2.getTrackbarPos("Dur. PARE [s]", WIN_TUNE) / 10.0
+            brain.u = 0.0  # Garantizar que no haya movimiento
+            # Mostrar "PARE" en el overlay
+            cv2.putText(frame, "PARE - Deteniendo {:.1f}s".format(
+                        max(0, brain.stop_until - time.monotonic())),
+                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            # Si ya venció el tiempo, reanudar automáticamente
+            if time.monotonic() >= brain.stop_until:
+                brain.state = State.SIGUIENDO
+                print("[MAIN] Reanudando marcha automáticamente después de PARE")
+
+        # Mostrar señal de tráfico detectada (solo texto, no afecta control)
+        sig = brain.snapshot().get("signal", None)
+        if sig:
+            cv2.putText(frame, "Senal: {}".format(sig),
+                        (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
 
 def parse_args():

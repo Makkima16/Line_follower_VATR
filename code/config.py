@@ -86,9 +86,23 @@ SIM_TURN_DEG_PER_S = 180.0          # Velocidad de giro con 'a'/'d'
 SIM_WHEEL_BASE_CM = 11.5            # Distancia entre ruedas del mBot
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  SIMULADOR DE LAZO CERRADO (simulador.py)
+#  SEÑALES (objetivos 5 y 6 del reto)
 # ─────────────────────────────────────────────────────────────────────────────
-SIM_MAP_WIDTH_CM = 120.0            # Ancho real que representa la imagen del mapa
+# Rangos HSV [TB] ajustables con trackbars.
+# Rojo: dos rangos de matiz por el-wrap en HSV (0-10 y 170-180).
+# Verde: un rango continuo.
+RED_HUE1_LOW, RED_HUE1_HIGH = 0, 10
+RED_HUE2_LOW, RED_HUE2_HIGH = 170, 180
+GREEN_HUE_LOW, GREEN_HUE_HIGH = 45, 90
+SIGNAL_MIN_SAT = 60          # S mínima para considerar un color "saturo"
+SIGNAL_MIN_VAL = 60          # V mínima
+MIN_SIGNAL_AREA = 0.005      # Área mínima de la señal (fracción del frame total)
+SIGNAL_CONFIRM_FRAMES = 3    # N° de frames consecutivos para confirmar detección
+STOP_DURATION_S = 3.0        # Tiempo que el robot se detiene ante PARE (docente/trackbar)
+SIGNAL_COOLDOWN_S = 2.0      # Ignorar la misma señal X s después de actuar
+SIGNAL_COVER_GRACE_S = 0.8   # Si la línea desaparece justo después de ver señal,
+                             # se asume que está tapada → seguir recto X s
+EPSILON_POLYDP_RATIO = 0.03  # Ratio del perímetro para approxPolyDP (7-9 vértices)
 # Cámara virtual: trapecio de piso que ve, medido desde el centro del robot.
 SIM_CAM_NEAR_CM = 8.0               # Distancia al borde inferior de la imagen
 SIM_CAM_DEPTH_CM = 25.0             # Profundidad del campo de visión

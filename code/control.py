@@ -46,6 +46,7 @@ class State(enum.Enum):
     SIGUIENDO = "SIGUIENDO"      # Línea a la vista, control PD
     BUSCANDO = "BUSCANDO"        # Línea perdida: gira hacia el último lado visto
     DETENIDO = "DETENIDO"        # Sin línea demasiado tiempo: parado por seguridad
+    PARE = "PARE"                # Señal de Pare: detener STOP_DURATION_S y reanudar auto.
 
 
 class Brain:
@@ -69,6 +70,12 @@ class Brain:
         self.last_side = 1               # +1 derecha, -1 izquierda
         self.lost_since = None
         self.paused = False
+        # Señales de tráfico (objetivos 5 y 6 del reto)
+        self.signal = None              # "PARE" o "SIGA", última señal vista
+        self.signal_seen_at = None      # timestamp cuándo se vio la señal
+        self.signal_cooldown_until = 0.0  # hasta cuándo ignorar la misma señal
+        self.signal_cover_until = 0.0   # hasta cuándo la línea tapada → recto
+        self.stop_until = 0.0           # timestamp hasta cuándo permanecer PARE
 
     # ── Hilo de video ──────────────────────────────────────────────────────
     def on_frame(self, line, now=None):
@@ -94,6 +101,16 @@ class Brain:
 
     def _on_lost(self, now):
         self.line_found = False
+
+        # Si la línea desaparece justo después de ver una señal,
+        # asumimos que está tapada por el octágono que estamos cruzando.
+        # Seguimos recto (u=0) en vez de girar, durante la gracia configurada.
+        if (self.state == State.SIGUIENDO and
+                self.signal_cover_until and now < self.signal_cover_until):
+            self.u = 0.0
+            self.lost_since = None
+            return
+
         if self.lost_since is None:
             self.lost_since = now
         lost_for = now - self.lost_since
@@ -121,6 +138,31 @@ class Brain:
     def set_paused(self, paused):
         with self.lock:
             self.paused = paused
+
+    def on_signal(self, label, now):
+        """Llama desde el hilo de video cuando senales.detect_signal() encuentra una señal."""
+        with self.lock:
+            # Cooldown: no actuar de la misma señal tan pronto
+            if now < self.signal_cooldown_until:
+                return
+
+            if label == "PARE":
+                self.state = State.PARE
+                self.stop_until = now + config.STOP_DURATION_S
+                self.signal = "PARE"
+                self.signal_seen_at = now
+                self.signal_cooldown_until = now + config.SIGNAL_COOLDOWN_S
+                print("[CONTROL] Senal PARE detectada -> detener {:.1f}s".format(config.STOP_DURATION_S))
+
+            elif label == "SIGA":
+                # SIGA: confirmación visual; no fuerza reanudación inmediata.
+                # El robot reanuda tras el tiempo de PARE ya vencido.
+                self.signal = "SIGA"
+                print(f"[CONTROL] Señal SIGA detectada")
+
+            # Marcar para la gracia "línea tapada por octágono"
+            self.signal_seen_at = now
+            self.signal_cover_until = now + config.SIGNAL_COVER_GRACE_S
 
     def snapshot(self):
         with self.lock:
