@@ -11,8 +11,8 @@ desde la ventana de trackbars "Calibracion".
 # ─────────────────────────────────────────────────────────────────────────────
 CAMERA_SOURCE = "phone"               # "phone" (celular por WiFi) o "usb"
 CAMERA_INDEX = 0                    # Solo para "usb"
-PHONE_HTTP_PORT = 8080
-PHONE_HTTPS_PORT = 8443
+PHONE_HTTP_PORT = 9999
+PHONE_HTTPS_PORT = 8433
 
 # Según cómo quede montado el celular en el robot:
 ROTATE = 0                          # 0, 90, 180 o 270 grados (sentido horario)
@@ -25,11 +25,12 @@ DISPLAY_SCALE = 2.0                 # Ampliación de la ventana de depuración
 #  DETECCIÓN DE LA LÍNEA (negra sobre fondo claro)
 # ─────────────────────────────────────────────────────────────────────────────
 ROI_HEIGHT_RATIO = 0.60             # [TB] Se analiza este % inferior del frame
+CHASSIS_MASK_RATIO = 0.34          # [TB] Fracción inferior del frame que es el propio robot             # [TB] Se analiza este % inferior del frame
 N_SLICES = 5                        # Franjas horizontales dentro de la ROI
 MIN_BLOB_AREA_RATIO = 0.01          # Área mínima de un trozo de línea (fracción de la franja)
 MAX_JUMP_RATIO = 0.25               # Salto horizontal máx. entre franjas (fracción del ancho)
 NEAR_WEIGHT = 0.6                   # [TB] Peso del punto cercano frente al lejano en el error
-BINARY_THRESHOLD = 115              # [TB] 0 = Otsu automático
+BINARY_THRESHOLD = 80              # [TB] 0 = Otsu automático
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CONTROL PD
@@ -55,7 +56,7 @@ LOST_STOP_S = 8.0                   # Sin línea tanto tiempo → parar por segu
 #   None                 → simulación (no se conecta nada, se ve en "Movimiento")
 #   "00:1B:10:21:2C:1B"  → MAC del mBot (socket RFCOMM, como master_pc/Robot.py)
 #   "/dev/rfcomm0"/"COM5"→ puerto serie (pyserial)
-ROBOT_ADDRESS = "00:1B:10:21:2C:34"
+ROBOT_ADDRESS = "00:1B:10:21:2C:1B"
 RFCOMM_CHANNEL = 1
 BAUD_RATE = 115200
 
@@ -100,6 +101,7 @@ GREEN_HUE_LOW, GREEN_HUE_HIGH = 45, 90
 SIGNAL_MIN_SAT = 60          # S mínima por píxel para entrar en la máscara
 SIGNAL_MIN_MEAN_SAT = 90     # S promedio dentro del contorno: señal pintada ≈ 150, madera/piel ≈ 40
 SIGNAL_MIN_VAL = 60          # V mínima
+SIGNAL_BAND = (0.30, 0.98)       # Fracción vertical del frame donde puede haber señal
 MIN_SIGNAL_AREA = 0.003      # Área mínima de la señal (fracción del frame total)
 SIGNAL_MIN_SOLIDITY = 0.80   # área/área_casco: polígonos regulares ≈ 0.95; descarta madera, sombras
 SIGNAL_ASPECT_RANGE = (0.6, 1.6)   # ancho/alto del bounding box (un polígono regular ≈ 1)

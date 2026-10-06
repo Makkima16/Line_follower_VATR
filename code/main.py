@@ -57,6 +57,7 @@ def create_trackbars(driver):
     nop = lambda _v: None
     cv2.createTrackbar("Umbral (0=Otsu)", WIN_TUNE, config.BINARY_THRESHOLD, 255, nop)
     cv2.createTrackbar("ROI %", WIN_TUNE, int(config.ROI_HEIGHT_RATIO * 100), 100, nop)
+    cv2.createTrackbar("Chasis %", WIN_TUNE, int(config.CHASSIS_MASK_RATIO * 100), 80, nop)
     cv2.createTrackbar("Peso cercano %", WIN_TUNE, int(config.NEAR_WEIGHT * 100), 100, nop)
     cv2.createTrackbar("Kp x100", WIN_TUNE, int(config.KP * 100), 400, nop)
     cv2.createTrackbar("Kd x100", WIN_TUNE, int(config.KD * 100), 200, nop)
@@ -88,7 +89,8 @@ def read_trackbars(brain):
         brain.stop_duration = float(tb("Dur. PARE [s]"))
     return (tb("Umbral (0=Otsu)"),
             max(tb("ROI %"), 10) / 100.0,
-            tb("Peso cercano %") / 100.0)
+            tb("Peso cercano %") / 100.0,
+            max(tb("Chasis %"), 0) / 100.0)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -275,14 +277,15 @@ def run(cap, brain, sender, preview, args):
             last_frame_id = frame_id
 
         frame = vision.prepare_frame(frame)
-        threshold, roi_ratio, near_weight = read_trackbars(brain)
-        line = vision.detect_line(frame, threshold, roi_ratio, near_weight, prev_x)
+        threshold, roi_ratio, near_weight, chassis_ratio = read_trackbars(brain)
+        line = vision.detect_line(frame, threshold, roi_ratio, near_weight, prev_x,
+                                  chassis_ratio)
         # Recordar dónde estaba la línea para no saltar a otra mancha en el siguiente frame
         prev_x = line.points[0][0] if line is not None else None
 
         # Detección de señales de tráfico (objetivos 5 y 6). Se informa en cada
         # frame, también cuando no hay señal (para confirmar y re-armar).
-        signal = senales.detect_signal(frame)
+        signal = senales.detect_signal(frame, *config.SIGNAL_BAND)
         brain.on_signal(signal.label if signal is not None else None, time.monotonic(),
                         partial=signal is not None and signal.partial)
 

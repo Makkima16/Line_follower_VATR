@@ -181,7 +181,7 @@ class Simulation:
             self.distance_cm += abs(v) * active
         self.t += h
 
-    def advance_one_frame(self, threshold, roi_ratio, near_weight):
+    def advance_one_frame(self, threshold, roi_ratio, near_weight, chassis_ratio=None):
         """Corre la física hasta la próxima captura y devuelve (frame, línea)."""
         while True:
             # Hilo de envío: el driver decide el comando y cuánto dura
@@ -206,9 +206,10 @@ class Simulation:
             if self.t >= self.next_frame_t:
                 self.next_frame_t += 1.0 / config.SIM_CAM_FPS
                 frame = self.cam.capture(self.pos, self.theta)
-                line = vision.detect_line(frame, threshold, roi_ratio, near_weight, self.prev_x)
+                line = vision.detect_line(frame, threshold, roi_ratio, near_weight,
+                                          self.prev_x, chassis_ratio)
                 self.prev_x = line.points[0][0] if line is not None else None
-                signal = senales.detect_signal(frame)
+                signal = senales.detect_signal(frame, *config.SIGNAL_BAND)
                 self.pending.append((self.t + config.SIM_LATENCY_S, line,
                                      signal.label if signal is not None else None,
                                      signal is not None and signal.partial))
@@ -327,8 +328,9 @@ def main():
             sim.reset(clicks["new_start"])
             clicks["new_start"] = None
 
-        threshold, roi_ratio, near_weight = read_trackbars(sim.brain)
-        frame, line = sim.advance_one_frame(threshold, roi_ratio, near_weight)
+        threshold, roi_ratio, near_weight, chassis_ratio = read_trackbars(sim.brain)
+        frame, line = sim.advance_one_frame(threshold, roi_ratio, near_weight,
+                                            chassis_ratio)
 
         cv2.imshow(WIN_CAM, draw_overlay(frame, line, roi_ratio, sim.brain.snapshot(),
                                          sim.last_msg, config.SIM_CAM_FPS, config.DISPLAY_SCALE,

@@ -94,7 +94,8 @@ def line_mask(roi, threshold):
     return cv2.morphologyEx(binary, cv2.MORPH_OPEN, _KERNEL5)
 
 
-def detect_line(frame, threshold, roi_ratio=None, near_weight=None, prev_x=None):
+def detect_line(frame, threshold, roi_ratio=None, near_weight=None, prev_x=None,
+                chassis_ratio=None):
     """
     Busca la línea por franjas horizontales dentro de la ROI inferior.
 
@@ -114,15 +115,34 @@ def detect_line(frame, threshold, roi_ratio=None, near_weight=None, prev_x=None)
     """
     roi_ratio = config.ROI_HEIGHT_RATIO if roi_ratio is None else roi_ratio
     near_weight = config.NEAR_WEIGHT if near_weight is None else near_weight
+    chassis_ratio = (config.CHASSIS_MASK_RATIO if chassis_ratio is None
+                     else chassis_ratio)
 
     h, w = frame.shape[:2]
     roi_top = int(h * (1.0 - roi_ratio))
     # Se binariza el frame entero: la ROI se usa para el error (lo cercano) y el
     # frame completo para ver hasta dónde llega la línea (salidas / callejón)
     full = line_mask(frame, threshold)
-    binary = full[roi_top:, :]
+    # El cuerpo del robot ocupa la franja inferior y es oscuro y continuo, asi que
+    # la binarizacion lo marca como si fuera pista. Como ademas es mas ancho y
+    # limpio que la linea real, compite con ella y la franja mas cercana (la de
+    # mayor peso en el error) cae sobre el chasis. Se pone en blanco antes de
+    # cortar las franjas para que el detector no lo vea.
+    # La banda de analisis va desde roi_top hasta justo encima del chasis. Si se
+    # dejara hasta el fondo, las franjas bajas se wasting en filas ya en blanco y
+    # ademas la franja mas cercana (la de mayor peso en el error) no seria la
+    # correcta: el error se mediria contra el borde del robot en vez de la pista.
+    cut = int(h * chassis_ratio)
+    band_bottom = max(h - cut, roi_top)
+    if cut > 0:
+        full[band_bottom:, :] = 255
+    binary = full[roi_top:band_bottom, :]
 
-    roi_h = h - roi_top
+    roi_h = band_bottom - roi_top
+    if roi_h < config.N_SLICES:      # ROI inutilizable: usar todo lo que haya
+        band_bottom = h - cut if cut > 0 else h
+        binary = full[roi_top:band_bottom, :]
+        roi_h = band_bottom - roi_top
     # CRÍTICO: max(..., 1) evita franjas de 0 px de alto si la ROI es muy baja
     # (con 0 las franjas quedarían vacías y nunca se encontraría la línea).
     slice_h = max(roi_h // config.N_SLICES, 1)

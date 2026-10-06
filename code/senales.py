@@ -36,7 +36,9 @@ class SignalResult:
                             # saber que hay una señal (y una barra) por delante
 
 
-def detect_signal(frame: np.ndarray) -> Optional[SignalResult]:
+def detect_signal(frame: np.ndarray,
+                min_frac: float = 0.0,
+                max_frac: float = 1.0) -> Optional[SignalResult]:
     """
     Busca una señal de tráfico (polígono rojo = PARE, polígono verde = SIGA) en el frame.
 
@@ -54,6 +56,20 @@ def detect_signal(frame: np.ndarray) -> Optional[SignalResult]:
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
     h, w = hsv.shape[:2]
+    # Las señales están tendidas en el suelo, en la banda por la que el robot
+    # circula. Sin recortar, cualquier polígono rojo o verde del tamaño mínimo en
+    # cualquier parte del frame cuenta como señal: una manta, una manga o una mano
+    # detienen el robot. min_frac/max_frac acotan la banda vertical válida.
+    y_min, y_max = int(h * min_frac), int(h * max_frac)
+    if y_max - y_min < 8 or y_max > h or y_min < 0:
+        y_min, y_max = 0, h
+    hsv = hsv[y_min:y_max, :]
+    # h,w se recalculan sobre la banda recortada: cmask se dibuja con estas
+    # dimensiones y cv2.mean exige que la máscara coincida con la imagen. Con las
+    # dimensiones originales lanzaría aserción de tamaño. y_off es el desplazamiento
+    # para devolver centro y bbox en coordenadas del frame original.
+    h_band, w = hsv.shape[:2]
+    y_off = y_min
     best: Optional[SignalResult] = None
     partial: Optional[SignalResult] = None
     best_area = 0.0
@@ -108,7 +124,7 @@ def detect_signal(frame: np.ndarray) -> Optional[SignalResult]:
             # Σ S / n° de píxeles). Una señal pintada tiene color "puro"; la
             # madera o la piel pasan el umbral por píxel en algunos puntos
             # pero en promedio son apagadas.
-            cmask = np.zeros((h, w), np.uint8)
+            cmask = np.zeros((h_band, w), np.uint8)
             cv2.drawContours(cmask, [c], -1, 255, cv2.FILLED)
             if cv2.mean(hsv, mask=cmask)[1] < SIGNAL_MIN_MEAN_SAT:
                 continue
@@ -119,10 +135,10 @@ def detect_signal(frame: np.ndarray) -> Optional[SignalResult]:
             # Si toca el borde del frame solo se ve un trozo: su forma no es la
             # real (una tira de papel cortada puede parecer un rombo). No sirve
             # para actuar; se devuelve como "parcial" si no hay otra mejor.
-            if x <= 1 or y <= 1 or x + bw >= w - 1 or y + bh >= h - 1:
+            if x <= 1 or y <= 1 or x + bw >= w - 1 or y + bh >= h_band - 1:
                 if partial is None:
-                    partial = SignalResult(label, (x + bw / 2.0, y + bh / 2.0), area,
-                                           (x, y, bw, bh), 0, c, partial=True)
+                    partial = SignalResult(label, (x + bw / 2.0, y + bh / 2.0 + y_off), area,
+                                           (x, y + y_off, bw, bh), 0, c, partial=True)
                 continue
             aspect = bw / float(bh)
             if not (SIGNAL_ASPECT_RANGE[0] <= aspect <= SIGNAL_ASPECT_RANGE[1]):
@@ -144,9 +160,9 @@ def detect_signal(frame: np.ndarray) -> Optional[SignalResult]:
             if not (vmin <= vertices <= vmax):
                 continue
 
-            # Centro del bounding box (coordenadas del frame, para dibujar)
+            # Centro del bounding box, devuelto a coordenadas del frame original
             cx = x + bw / 2.0
-            cy = y + bh / 2.0
+            cy = y + bh / 2.0 + y_off
 
             # Quedarse con la señal más grande (la más cercana a la cámara)
             if area > best_area:
@@ -155,9 +171,9 @@ def detect_signal(frame: np.ndarray) -> Optional[SignalResult]:
                     label=label,
                     center=(cx, cy),
                     area=area,
-                    bbox=(x, y, bw, bh),
+                    bbox=(x, y + y_off, bw, bh),
                     vertices=vertices,
-                    contour=approx,
+                    contour=approx + np.array([[0, y_off]], np.int32),
                 )
 
     return best if best is not None else partial
