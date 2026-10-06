@@ -334,7 +334,7 @@ def main():
 
         cv2.imshow(WIN_CAM, draw_overlay(frame, line, roi_ratio, sim.brain.snapshot(),
                                          sim.last_msg, config.SIM_CAM_FPS, config.DISPLAY_SCALE,
-                                         sim.last_signal))
+                                         sim.last_signal, chassis_ratio=chassis_ratio))
         cv2.imshow(WIN_MAP, draw_map(track, sim, scale, speed, clicks["pos"]))
         cv2.imshow(WIN_ODOM, mapa.draw_map(sim.brain.map_snapshot()))
 

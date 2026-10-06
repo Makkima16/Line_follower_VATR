@@ -124,10 +124,10 @@ def put_text(img, text, org, color=(255, 255, 255), scale=0.55):
 
 
 def draw_overlay(frame, line, roi_ratio, snap, last_msg, fps, scale, signal=None,
-                 driver=None):
+                 driver=None, chassis_ratio=0.0):
     """
     Dibuja la información de depuración sobre una copia reescalada del frame:
-    límite de la ROI, contornos y centroides de la línea, señal detectada,
+    límites de la ROI y del chasis, contornos y centroides de la línea, señal detectada,
     barra del mando u, estado, error, último comando y FPS.
 
     snap es brain.snapshot(); scale solo cambia el tamaño de la ventana.
@@ -136,9 +136,13 @@ def draw_overlay(frame, line, roi_ratio, snap, last_msg, fps, scale, signal=None
     view = cv2.resize(frame, (int(w * scale), int(h * scale)))
     vh, vw = view.shape[:2]
 
-    roi_y = int(h * (1.0 - roi_ratio) * scale)
+    # Borde inferior de la ROI (parte superior del frame): el más alto entre el
+    # corte de "ROI %" (cian) y el de "Chasis %" (rojo). Debajo no se analiza.
+    roi_y = int(h * roi_ratio * scale)
     cv2.line(view, (0, roi_y), (vw, roi_y), (255, 200, 0), 1)
-    cv2.line(view, (vw // 2, roi_y), (vw // 2, vh), (120, 120, 120), 1)   # Centro
+    chassis_y = int(h * (1.0 - chassis_ratio) * scale)
+    cv2.line(view, (0, chassis_y), (vw, chassis_y), (0, 0, 255), 1)
+    cv2.line(view, (vw // 2, 0), (vw // 2, min(roi_y, chassis_y)), (120, 120, 120), 1)   # Centro
 
     if line is not None:
         for c in line.contours:
@@ -300,7 +304,7 @@ def run(cap, brain, sender, preview, args):
 
         cv2.imshow(WIN_VIEW, draw_overlay(frame, line, roi_ratio, brain.snapshot(),
                                           sender.last_message, fps, args.escala,
-                                          signal, brain.driver))
+                                          signal, brain.driver, chassis_ratio))
         # CRÍTICO: si no hay línea, line es None y line.binary daría AttributeError
         if line is not None:
             cv2.imshow(WIN_MASK, line.binary)

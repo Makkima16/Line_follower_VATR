@@ -137,9 +137,10 @@ se puede calibrar Kp, Kd, umbral, etc. sin tener el robot.
    píxel solo es "negro" si es oscuro en los tres canales, así que los objetos de color
    no se confunden con la línea. El umbral es fijo (trackbar) u Otsu si vale 0.
 3. **Morfología:** un *cierre* rellena los brillos dentro de la cinta y una *apertura*
-   borra puntos sueltos.
-4. **ROI por franjas:** solo se analiza la parte inferior del frame (el piso delante del
-   robot), cortada en 5 franjas horizontales. En cada una se buscan contornos
+   borra puntos sueltos. Un segundo umbral más permisivo (`LINE_WEAK_MARGIN`) añade la
+   cinta lejana, fina y más clara, solo donde está unida a la línea ya detectada.
+4. **ROI por franjas:** solo se analiza la parte **superior** del frame (el piso delante
+   del robot; abajo se ve el propio chasis y se recorta), cortada en 5 franjas horizontales. En cada una se buscan contornos
    (`cv2.findContours`) y se calcula su centroide con momentos:
    `x = m10 / m00`, `y = m01 / m00`.
    Subiendo de franja en franja se elige el trozo más cercano al anterior, lo que
@@ -221,7 +222,9 @@ en vivo con los trackbars.
 | Parámetro | Efecto |
 |---|---|
 | `BINARY_THRESHOLD` | Umbral de "negro". Súbelo si la línea sale cortada; bájalo si aparecen sombras. `0` = Otsu. |
-| `ROI_HEIGHT_RATIO` | Fracción inferior del frame analizada. Más alta = ve más lejos. |
+| `ROI_HEIGHT_RATIO` | Fracción **superior** del frame analizada (línea cian). Bájala si entra el robot o su sombra. |
+| `CHASSIS_MASK_RATIO` | Fracción inferior del frame que es el propio robot (línea roja); nunca se analiza. |
+| `LINE_WEAK_MARGIN` | Margen del umbral débil (doble umbral): rescata la cinta lejana unida a la línea firme. |
 | `NEAR_WEIGHT` | 1 = solo mira cerca (reacciona tarde). Menor = anticipa las curvas. |
 | `KP` | Fuerza del giro. Si oscila en rectas, bájalo; si se sale en curvas, súbelo. |
 | `KD` | Amortiguación. Súbelo si se pasa de la línea después de cada curva. |

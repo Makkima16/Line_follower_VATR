@@ -11,7 +11,7 @@ import config
 import vision
 import senales
 
-EV = Path("/tmp/opencode/evidencia_chasis.png")
+EV = Path(__file__).parent.parent / "pistas" / "chasis_real.png"   # frame real del celular montado
 fallos = []
 
 
@@ -25,16 +25,31 @@ print("=" * 74)
 print("1. ROI + chasis: la banda de analisis NO puede tocar el robot")
 print("=" * 74)
 
-h, w = 538, 640
-roi_top = int(h * (1.0 - config.ROI_HEIGHT_RATIO))
-cut = int(h * config.CHASSIS_MASK_RATIO)
-band_bottom = max(h - cut, roi_top)
-check("ROI empieza por encima de la mitad del frame", roi_top < h * 0.45, f"roi_top={roi_top}")
-check("banda termina antes del chasis", band_bottom <= h - cut, f"band={roi_top}..{band_bottom}")
-check("banda tiene altura util", band_bottom - roi_top >= config.N_SLICES,
-      f"{band_bottom - roi_top}px para {config.N_SLICES} franjas")
-check("banda es una franja, no casi todo el frame",
-      (band_bottom - roi_top) / h < 0.6, f"{100*(band_bottom-roi_top)/h:.0f}% del frame")
+h, w = 240, 320
+roi_bottom = int(h * config.ROI_HEIGHT_RATIO)          # La ROI es la parte SUPERIOR
+chassis_top = h - int(h * config.CHASSIS_MASK_RATIO)   # Desde aquí hacia abajo es robot
+band_bottom = min(roi_bottom, chassis_top)
+check("la ROI termina por encima del chasis", band_bottom <= chassis_top,
+      f"ROI=0..{band_bottom}, chasis desde {chassis_top}")
+check("banda tiene altura util", band_bottom >= 10 * config.N_SLICES,
+      f"{band_bottom}px para {config.N_SLICES} franjas")
+
+# Línea recta + cuerpo oscuro abajo: una sola salida (arriba). Si las filas del
+# chasis se pintaran como línea saldrían 3 (ramificación fantasma).
+syn = np.full((h, w, 3), 200, np.uint8)
+cv2.line(syn, (160, 0), (160, h), (20, 20, 20), 22)
+cv2.rectangle(syn, (40, int(h * 0.70)), (280, h), (30, 30, 30), -1)
+line = vision.detect_line(syn, config.BINARY_THRESHOLD)
+check("linea recta con chasis: exactamente 1 salida", line is not None and len(line.exits) == 1,
+      f"salidas={[e.px for e in line.exits] if line else None}")
+check("linea recta con chasis: error ~ 0", line is not None and abs(line.error) < 0.05)
+# Trackbars cruzados (ROI minima y chasis maximo) no pueden romper la deteccion
+try:
+    vision.detect_line(syn, config.BINARY_THRESHOLD, 0.10, 0.6, None, 0.80)
+    extremos_ok = True
+except Exception as e:
+    extremos_ok = False
+check("trackbars extremos no lanzan error", extremos_ok)
 
 print()
 print("=" * 74)
@@ -48,26 +63,19 @@ else:
     H, W = img.shape[:2]
     print(f"  frame real {W}x{H}")
 
-    # El chasis en el frame real empieza cerca del 66% inferior
-    MOTOR_ZONE = int(H * 0.78)
-    for ratio, etiqueta in ((0.0, "sin mascara"), (config.CHASSIS_MASK_RATIO, "con mascara")):
-        line = vision.detect_line(img, config.BINARY_THRESHOLD, config.ROI_HEIGHT_RATIO,
-                                  config.NEAR_WEIGHT, None, ratio)
-        if line is None:
-            print(f"  {etiqueta:<14} ninguna linea detectada")
-            continue
+    # En el frame real el robot (sensor ultrasónico y soportes) empieza en ~70% del alto
+    ROBOT_TOP = int(H * 0.70)
+    line = vision.detect_line(img, config.BINARY_THRESHOLD)
+    check("se detecta la cinta", line is not None)
+    if line is not None:
         ys = [p[1] for p in line.points]
-        cerca = min(ys)
-        print(f"  {etiqueta:<14} franjas={len(line.points)} cercano_y={int(cerca)} "
-              f"error={line.error:+.3f}")
-        if ratio == 0.0:
-            antes_cerca = cerca
-        else:
-            check("el punto cercano esta sobre la pista, no sobre los motores",
-                  cerca < MOTOR_ZONE, f"y={int(cerca)} vs motores desde y={MOTOR_ZONE}")
-
-    check("la mascara cambia el resultado o no rompe nada",
-          True)
+        print(f"  franjas={len(line.points)} y={int(min(ys))}..{int(max(ys))} error={line.error:+.3f} "
+              f"salidas={[e.px for e in line.exits]}")
+        check("ningun punto de la linea cae sobre el robot", max(ys) < ROBOT_TOP,
+              f"y_max={int(max(ys))} vs robot desde y={ROBOT_TOP}")
+        check("la cinta se sigue en todas las franjas", len(line.points) == config.N_SLICES)
+        check("una sola salida (sin ramificacion fantasma)", len(line.exits) == 1)
+        check("error pequeno: la cinta esta casi centrada", abs(line.error) < 0.3)
 
 print()
 print("=" * 74)

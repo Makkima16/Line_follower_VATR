@@ -43,7 +43,7 @@ Es un `@dataclass`: un contenedor de datos sin lógica propia. Es lo que devuelv
 | `points` | `list` | Centroides `(x, y)`, uno por franja, ordenados de **abajo (cerca del robot) hacia arriba (lejos)**. Están en coordenadas del frame completo. |
 | `contours` | `list` | Contorno elegido en cada franja, desplazado a coordenadas del frame. Se usa para dibujar el overlay. |
 | `binary` | `np.ndarray` | Máscara binaria de la ROI (línea = 255, blanco). Se muestra en la ventana de la máscara. |
-| `roi_top` | `int` | Fila `y` donde empieza la ROI. Se usa para dibujar el rectángulo de la región analizada. |
+| `roi_top` | `int` | Fila `y` donde empieza la ROI (siempre 0: la ROI es la parte superior del frame). |
 | `error` | `float` | **Salida principal.** Error normalizado en `[-1, 1]`: `> 0` → línea a la derecha, `< 0` → línea a la izquierda. Es la entrada del controlador PD. |
 
 ---
@@ -136,7 +136,7 @@ Es el núcleo del módulo. Busca la línea dividiendo la ROI en **franjas horizo
 |---|---|
 | `frame` | Fotograma ya preparado con `prepare_frame()`. |
 | `threshold` | Umbral de binarización (`0` = Otsu). |
-| `roi_ratio` | Fracción inferior del frame que se analiza. Si es `None`, se usa `config.ROI_HEIGHT_RATIO`. |
+| `roi_ratio` | Fracción superior del frame que se analiza. Si es `None`, se usa `config.ROI_HEIGHT_RATIO`. |
 | `near_weight` | Peso del punto cercano frente al lejano en el error. Si es `None`, se usa `config.NEAR_WEIGHT`. |
 | `prev_x` | Posición `x` de la línea en el frame anterior (continuidad temporal). |
 
@@ -145,11 +145,11 @@ Es el núcleo del módulo. Busca la línea dividiendo la ROI en **franjas horizo
 #### 1. Región de interés (líneas 70-72)
 
 ```python
-roi_top = int(h * (1.0 - roi_ratio))
-binary = line_mask(frame[roi_top:, :], threshold)
+band_bottom = min(int(h * roi_ratio), h - int(h * chassis_ratio))
+floor = full[:band_bottom, :]
 ```
 
-Con `roi_ratio = 0.60` se analiza el **60 % inferior** del frame. La parte superior (horizonte, paredes, otros tramos de la pista) solo añadiría ruido. La máscara se calcula **solo sobre la ROI**, lo que ahorra cómputo.
+Con `roi_ratio = 0.60` se analiza el **60 % superior** del frame. Con el celular montado sobre el robot, la parte inferior es el propio chasis (oscuro y más ancho que la cinta): si entra en la ROI se confunde con la línea. `chassis_ratio` es un segundo tope: esa fracción inferior nunca se analiza. Las filas se **recortan** (no se pintan), y tanto las franjas como la búsqueda de salidas trabajan sobre `floor`.
 
 #### 2. Franjas y límites (líneas 74-79)
 

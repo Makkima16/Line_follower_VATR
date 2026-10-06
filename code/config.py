@@ -24,13 +24,15 @@ DISPLAY_SCALE = 2.0                 # Ampliación de la ventana de depuración
 # ─────────────────────────────────────────────────────────────────────────────
 #  DETECCIÓN DE LA LÍNEA (negra sobre fondo claro)
 # ─────────────────────────────────────────────────────────────────────────────
-ROI_HEIGHT_RATIO = 0.60             # [TB] Se analiza este % inferior del frame
-CHASSIS_MASK_RATIO = 0.34          # [TB] Fracción inferior del frame que es el propio robot             # [TB] Se analiza este % inferior del frame
+ROI_HEIGHT_RATIO = 0.60             # [TB] Se analiza este % SUPERIOR del frame (abajo está el robot)
+CHASSIS_MASK_RATIO = 0.30           # [TB] Fracción inferior del frame que es el propio robot (nunca se mira)
 N_SLICES = 5                        # Franjas horizontales dentro de la ROI
 MIN_BLOB_AREA_RATIO = 0.01          # Área mínima de un trozo de línea (fracción de la franja)
 MAX_JUMP_RATIO = 0.25               # Salto horizontal máx. entre franjas (fracción del ancho)
 NEAR_WEIGHT = 0.6                   # [TB] Peso del punto cercano frente al lejano en el error
-BINARY_THRESHOLD = 80              # [TB] 0 = Otsu automático
+BINARY_THRESHOLD = 155              # [TB] 0 = Otsu automático
+LINE_WEAK_MARGIN = 20               # Umbral débil = umbral + esto: rescata la cinta lejana (fina y clara)
+                                    # solo si está unida a la línea firme. 0 = un solo umbral
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CONTROL PD
@@ -125,7 +127,7 @@ EPSILON_POLYDP_RATIO = 0.03  # epsilon de approxPolyDP como fracción del perím
 # no cuenta:
 #   1 salida  → tramo normal      2+ salidas → ramificación
 #   0 salidas → la línea termina a la vista → posible callejón sin salida
-MIN_EXIT_PX = 4                     # Largo mínimo de un tramo blanco en el borde para contar como salida
+MIN_EXIT_PX = 2                     # Largo mínimo de un tramo blanco en el borde para contar como salida
 EXIT_MERGE_RATIO = 1.0              # Tramos separados por menos de este × ancho de la línea son UNA salida
                                     # (un brillo en la cinta hace una muesca y parte la salida en dos)
 ENTRY_SIDE_RATIO = 0.20             # Lo que toca los lados en este % inferior del frame es la entrada, no una salida
@@ -133,7 +135,7 @@ JUNCTION_CONFIRM_FRAMES = 2         # Frames seguidos con 2+ salidas para acepta
 CROSSBAR_WIDTH_RATIO = 2.5          # Fila de la mancha así de ancha (× ancho de línea) y cerrada = barra transversal
 CROSSBAR_IGNORE_CM = 70.0           # Tras ver una barra entera, no aceptar cruces estos cm (hasta pasarla)
 DEAD_END_FRAMES = 5                 # Frames seguidos con 0 salidas para aceptar el callejón
-DEAD_END_REACH = 0.70               # ...y la línea no pasa de este % de la altura del frame
+DEAD_END_REACH = 0.55               # ...y la línea no pasa de este % de la altura del frame
                                     # (se ve piso vacío más allá del final: no hay por dónde seguir)
 BRANCH_POLICY = "izquierda"         # Orden de exploración: "izquierda", "derecha" o "recto"
 BRANCH_MATCH_DEG = 50.0             # Tolerancia para reconocer una rama ya vista por su rumbo

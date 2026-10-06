@@ -23,6 +23,7 @@ import config
 
 # Kernel 5x5 para abrir/cerrar la máscara. Se crea una sola vez (no en cada frame).
 _KERNEL5 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+_KERNEL3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
 
 
 @dataclass
@@ -39,7 +40,7 @@ class LineResult:
     points: list          # Centroide por franja, de abajo (cerca) hacia arriba (lejos)
     contours: list        # Contorno elegido en cada franja (coords. del frame)
     binary: np.ndarray    # ROI binarizada (línea = blanco)
-    roi_top: int          # Fila del frame donde empieza la ROI
+    roi_top: int          # Fila del frame donde empieza la ROI (0: la ROI es la parte superior)
     error: float          # Error normalizado en [-1, 1]; > 0 = línea a la derecha
     exits: list           # Salidas (Exit) de la línea por el borde del frame
     reach: float          # Hasta dónde llega la línea: 1 = toca el borde superior del frame
@@ -80,24 +81,52 @@ def line_mask(roi, threshold):
 
     threshold = 0 → Otsu elige el umbral solo (separa los dos picos del
     histograma); threshold > 0 → umbral fijo del trackbar.
+
+    Doble umbral (histéresis). Lejos de la cámara la cinta se ve fina y
+    desenfocada, su V se mezcla con el del piso y un único umbral la corta
+    antes del borde: la línea "termina a la vista" y parece un callejón.
+      firme : V < T          (suavizado + cierre + apertura) → seguro que es línea
+      débil : V < T + margen (sin suavizar, apertura 3×3)    → podría serlo
+    Resultado = manchas débiles que TOCAN algo firme. La cinta lejana queda
+    unida a la cercana y se conserva; una sombra o arruga suelta no toca nada
+    firme y se descarta, así que no entra más ruido que con un solo umbral.
     """
     # CRÍTICO: roi debe ser una imagen a color (3 canales); max(axis=2) toma el
     # mayor de B, G, R por píxel. Con una imagen en gris esta línea falla.
-    v = cv2.GaussianBlur(roi.max(axis=2), (5, 5), 0)
+    v = roi.max(axis=2)
+    blur = cv2.GaussianBlur(v, (5, 5), 0)
     if threshold <= 0:
-        _, binary = cv2.threshold(v, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        threshold, strong = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     else:
         # BINARY_INV: lo oscuro (la línea) queda en blanco = 255
-        _, binary = cv2.threshold(v, threshold, 255, cv2.THRESH_BINARY_INV)
+        _, strong = cv2.threshold(blur, threshold, 255, cv2.THRESH_BINARY_INV)
     # Cierre: rellena brillos dentro de la cinta. Apertura: borra puntos sueltos.
-    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, _KERNEL5)
-    return cv2.morphologyEx(binary, cv2.MORPH_OPEN, _KERNEL5)
+    strong = cv2.morphologyEx(strong, cv2.MORPH_CLOSE, _KERNEL5)
+    strong = cv2.morphologyEx(strong, cv2.MORPH_OPEN, _KERNEL5)
+    if config.LINE_WEAK_MARGIN <= 0:
+        return strong
+
+    _, weak = cv2.threshold(v, threshold + config.LINE_WEAK_MARGIN, 255, cv2.THRESH_BINARY_INV)
+    weak = cv2.morphologyEx(weak, cv2.MORPH_OPEN, _KERNEL3) | strong
+    cnts, _ = cv2.findContours(weak, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    out = np.zeros_like(strong)
+    for c in cnts:
+        # Se trabaja solo dentro del rectángulo del contorno (rápido)
+        x, y, w, h = cv2.boundingRect(c)
+        if not strong[y:y + h, x:x + w].any():
+            continue
+        m = np.zeros((h, w), np.uint8)
+        cv2.drawContours(m, [c], -1, 255, cv2.FILLED, offset=(-x, -y))
+        # AND con lo firme: ¿esta mancha débil contiene algún píxel seguro?
+        if (m & strong[y:y + h, x:x + w]).any():
+            out[y:y + h, x:x + w] |= m & weak[y:y + h, x:x + w]
+    return out
 
 
 def detect_line(frame, threshold, roi_ratio=None, near_weight=None, prev_x=None,
                 chassis_ratio=None):
     """
-    Busca la línea por franjas horizontales dentro de la ROI inferior.
+    Busca la línea por franjas horizontales dentro de la ROI (parte superior del frame).
 
     De abajo hacia arriba, en cada franja se toma el trozo (contorno) cuyo
     centroide x = m10/m00 está más cerca del de la franja anterior. Así se
@@ -107,7 +136,8 @@ def detect_line(frame, threshold, roi_ratio=None, near_weight=None, prev_x=None,
 
     Parámetros:
       threshold   : umbral de binarización (0 = Otsu).
-      roi_ratio   : fracción inferior del frame que se analiza (0..1).
+      roi_ratio   : fracción superior del frame que se analiza (0..1).
+      chassis_ratio : fracción inferior del frame que ocupa el robot (0..1).
       near_weight : peso del punto cercano en el error (0..1).
       prev_x      : x de la línea en el frame anterior (para no saltar a otra mancha).
 
@@ -119,30 +149,27 @@ def detect_line(frame, threshold, roi_ratio=None, near_weight=None, prev_x=None,
                      else chassis_ratio)
 
     h, w = frame.shape[:2]
-    roi_top = int(h * (1.0 - roi_ratio))
-    # Se binariza el frame entero: la ROI se usa para el error (lo cercano) y el
-    # frame completo para ver hasta dónde llega la línea (salidas / callejón)
     full = line_mask(frame, threshold)
-    # El cuerpo del robot ocupa la franja inferior y es oscuro y continuo, asi que
-    # la binarizacion lo marca como si fuera pista. Como ademas es mas ancho y
-    # limpio que la linea real, compite con ella y la franja mas cercana (la de
-    # mayor peso en el error) cae sobre el chasis. Se pone en blanco antes de
-    # cortar las franjas para que el detector no lo vea.
-    # La banda de analisis va desde roi_top hasta justo encima del chasis. Si se
-    # dejara hasta el fondo, las franjas bajas se wasting en filas ya en blanco y
-    # ademas la franja mas cercana (la de mayor peso en el error) no seria la
-    # correcta: el error se mediria contra el borde del robot en vez de la pista.
-    cut = int(h * chassis_ratio)
-    band_bottom = max(h - cut, roi_top)
-    if cut > 0:
-        full[band_bottom:, :] = 255
-    binary = full[roi_top:band_bottom, :]
+    # La ROI es la parte SUPERIOR del frame: filas [0, band_bottom). Con el celular
+    # montado sobre el robot, lo de abajo es el propio chasis (sensor, soportes,
+    # pilas): oscuro y más ancho que la cinta, la binarización lo marca como línea
+    # y compite con ella justo en la franja cercana, la de mayor peso en el error.
+    # El borde inferior es el más restrictivo de los dos trackbars:
+    #   ROI %    → se analiza este % superior del frame
+    #   Chasis % → este % inferior es robot y nunca se mira
+    # Esas filas se RECORTAN y todo el análisis (franjas y salidas) trabaja sobre
+    # "floor". Recortar por abajo no mueve las coordenadas (x, y) del resto.
+    # CRÍTICO: no pintarlas de 255 (255 = línea): quedaría una mancha de lado a
+    # lado unida a la cinta y find_exits vería dos salidas falsas (izq. y der.)
+    # en cada frame, es decir, una ramificación fantasma permanente.
+    band_bottom = min(int(h * roi_ratio), h - int(h * chassis_ratio))
+    # Como mínimo quedan N_SLICES filas aunque los trackbars se crucen
+    band_bottom = min(max(band_bottom, config.N_SLICES), h)
+    roi_top = 0
+    floor = full[:band_bottom, :]
+    binary = floor
 
     roi_h = band_bottom - roi_top
-    if roi_h < config.N_SLICES:      # ROI inutilizable: usar todo lo que haya
-        band_bottom = h - cut if cut > 0 else h
-        binary = full[roi_top:band_bottom, :]
-        roi_h = band_bottom - roi_top
     # CRÍTICO: max(..., 1) evita franjas de 0 px de alto si la ROI es muy baja
     # (con 0 las franjas quedarían vacías y nunca se encontraría la línea).
     slice_h = max(roi_h // config.N_SLICES, 1)
@@ -212,13 +239,13 @@ def detect_line(frame, threshold, roi_ratio=None, near_weight=None, prev_x=None,
 
     # Ancho de la línea cerca del robot = ancho del contorno de la franja inferior
     line_w = cv2.boundingRect(contours[0])[2]
-    exits, reach, others, comp = find_exits(full, points[0][0], points[0][1], line_w, min_area)
+    exits, reach, others, comp = find_exits(floor, points[0][0], points[0][1], line_w, min_area)
     crossbar = closed_crossbar(comp, line_w, points) if comp is not None else False
-    floor = pixel_to_floor([e[0] for e in exits] + [points[0]], w, h)
+    cm = pixel_to_floor([e[0] for e in exits] + [points[0]], w, h)
     exits = [Exit(px, tuple(f), math.degrees(math.atan2(f[1], f[0])))
-             for (px, _), f in zip(exits, floor[:-1])]
+             for (px, _), f in zip(exits, cm[:-1])]
     return LineResult(points, contours, binary, roi_top, error, exits, reach, others,
-                      crossbar, tuple(floor[-1]))
+                      crossbar, tuple(cm[-1]))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -228,9 +255,9 @@ def find_exits(binary, near_x, near_y, line_w, min_area):
     """
     Cuenta por dónde sale del frame la mancha de línea que se está siguiendo.
 
-    Se usa el frame completo (no solo la ROI) porque ahí se ve si un brazo
-    realmente continúa: una barra transversal corta cruza el borde de la ROI
-    pero termina dentro de la imagen, así que no es una rama.
+    Se usa todo el piso visible (la ROI entera, no una franja) porque ahí se ve
+    si un brazo realmente continúa: una barra transversal corta termina dentro
+    de la imagen, así que no es una rama.
 
     1. Se toma solo el contorno que contiene al punto cercano (near_x, near_y),
        para que una mancha suelta no cuente como rama, y se pinta relleno.

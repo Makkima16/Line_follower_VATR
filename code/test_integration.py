@@ -1,6 +1,7 @@
 """Test de integración rápida"""
 import sys
-sys.path.insert(0, r'D:\visionArtificialTiempoR\Line_follower_VATR\code')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
 
 import cv2
 import time
@@ -9,7 +10,7 @@ from senales import detect_signal
 from control import Brain, State
 from drivers import make_driver
 
-img = cv2.imread(r'D:\visionArtificialTiempoR\Line_follower_VATR\PareSiga.jpg')
+img = cv2.imread(str(Path(__file__).parent.parent / 'PareSiga.jpg'))
 
 # Test 1: detección de señal
 result = detect_signal(img)

@@ -1,12 +1,13 @@
 """Test final de detección de señales: ambos octágonos"""
 import sys
-sys.path.insert(0, r'D:\visionArtificialTiempoR\Line_follower_VATR\code')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
 
 import cv2
 import numpy as np
 from senales import detect_signal, SignalResult
 
-img = cv2.imread(r'D:\visionArtificialTiempoR\Line_follower_VATR\PareSiga.jpg')
+img = cv2.imread(str(Path(__file__).parent.parent / 'PareSiga.jpg'))
 result = detect_signal(img)
 if result is None:
     print('Ninguna señal detectada')

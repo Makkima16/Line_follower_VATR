@@ -1,6 +1,7 @@
 """Test directo de la lógica de detección de señales"""
 import sys
-sys.path.insert(0, r'D:\visionArtificialTiempoR\Line_follower_VATR\code')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
 
 import cv2
 import numpy as np
@@ -8,7 +9,7 @@ from config import (RED_HUE1_LOW, RED_HUE1_HIGH, RED_HUE2_LOW, RED_HUE2_HIGH,
                     GREEN_HUE_LOW, GREEN_HUE_HIGH, SIGNAL_MIN_SAT, SIGNAL_MIN_VAL,
                     MIN_SIGNAL_AREA)
 
-img = cv2.imread(r'D:\visionArtificialTiempoR\Line_follower_VATR\PareSiga.jpg')
+img = cv2.imread(str(Path(__file__).parent.parent / 'PareSiga.jpg'))
 h, w = img.shape[:2]
 frame = img  # already BGR
 
