@@ -129,8 +129,13 @@ def detect_signal(frame: np.ndarray,
             if cv2.mean(hsv, mask=cmask)[1] < SIGNAL_MIN_MEAN_SAT:
                 continue
 
-            # Relación de aspecto ancho/alto del bounding box: un hexágono u
-            # octágono regular ≈ 1; una tabla o una franja alargada no
+            # Relación de aspecto ancho/alto. Se mide sobre el rectángulo mínimo
+            # girado, no sobre el bounding box: así la rotación de la cámara no
+            # cuenta. El rango es amplio porque una señal tendida en el suelo se
+            # ve aplastada por la perspectiva (la base se aleja y el alto se
+            # comprime), y con el rango estrecho una señal real de PERFECTA
+            # frontal quedaba descartada. El descarte de tablas y franjas lo
+            # hacen la solidez y el número de vértices.
             x, y, bw, bh = cv2.boundingRect(c)
             # Si toca un borde del frame solo se ve un trozo: su forma no es la
             # real (una tira de papel cortada puede parecer un rombo). No sirve
@@ -148,7 +153,8 @@ def detect_signal(frame: np.ndarray,
                     partial = SignalResult(label, (x + bw / 2.0, y + bh / 2.0 + y_off), area,
                                            (x, y + y_off, bw, bh), 0, c, partial=True)
                 continue
-            aspect = bw / float(bh)
+            (_, _), (rw, rh), _ = cv2.minAreaRect(c)
+            aspect = (max(rw, rh) / max(min(rw, rh), 1e-6))
             if not (SIGNAL_ASPECT_RANGE[0] <= aspect <= SIGNAL_ASPECT_RANGE[1]):
                 continue
 

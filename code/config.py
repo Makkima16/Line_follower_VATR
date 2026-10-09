@@ -106,7 +106,7 @@ SIGNAL_MIN_VAL = 60          # V mínima
 SIGNAL_BAND = (0.30, 0.98)       # Fracción vertical del frame donde puede haber señal
 MIN_SIGNAL_AREA = 0.003      # Área mínima de la señal (fracción del frame total)
 SIGNAL_MIN_SOLIDITY = 0.80   # área/área_casco: polígonos regulares ≈ 0.95; descarta madera, sombras
-SIGNAL_ASPECT_RANGE = (0.6, 1.6)   # ancho/alto del bounding box (un polígono regular ≈ 1)
+SIGNAL_ASPECT_RANGE = (0.6, 4.0)   # ancho/alto del rectángulo mínimo girado (perspectiva)
 PARE_VERTICES = (4, 9)       # Rojo: rombo/cuadrado (4), hexágono (6) u octágono (8), con tolerancia
 SIGA_VERTICES = (4, 9)       # Verde: rombo/cuadrado (4) u octágono (8)
 # Con 4 vértices la relación de aspecto (SIGNAL_ASPECT_RANGE) y la solidez son las
