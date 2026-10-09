@@ -132,10 +132,18 @@ def detect_signal(frame: np.ndarray,
             # Relación de aspecto ancho/alto del bounding box: un hexágono u
             # octágono regular ≈ 1; una tabla o una franja alargada no
             x, y, bw, bh = cv2.boundingRect(c)
-            # Si toca el borde del frame solo se ve un trozo: su forma no es la
+            # Si toca un borde del frame solo se ve un trozo: su forma no es la
             # real (una tira de papel cortada puede parecer un rombo). No sirve
             # para actuar; se devuelve como "parcial" si no hay otra mejor.
-            if x <= 1 or y <= 1 or x + bw >= w - 1 or y + bh >= h_band - 1:
+            #
+            # EXCEPCIÓN con el borde inferior: una señal PARE sobre el suelo, al
+            # acercarse el robot, crece y su base toca el final de la banda. Sin
+            # esta excepción NUNCA se confirma el PARE (se及以上 queda partial para
+            # siempre y Brain._sig_count nunca llega al umbral). Solo se toca abajo;
+            # los otros tres bordes siguen exigiendo forma completa.
+            touch_bottom = (y + bh >= h_band - 1)
+            cut_sides = (x <= 1 or y <= 1 or x + bw >= w - 1)
+            if cut_sides:
                 if partial is None:
                     partial = SignalResult(label, (x + bw / 2.0, y + bh / 2.0 + y_off), area,
                                            (x, y + y_off, bw, bh), 0, c, partial=True)
