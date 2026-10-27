@@ -18,15 +18,25 @@ import numpy as np
 
 SIZE = 360            # Lado de la ventana (px)
 PX_PER_CM = 3.0       # Escala del dibujo
-TRAIL_LEN = 1500
+TRAIL_LEN = 1500      # Máximo de puntos guardados del rastro
 
 
 class MotionPreview:
+    """
+    Robot virtual que se mueve con los comandos enviados y se dibuja en una ventana.
+
+    add() lo llama el hilo de envío y draw() el hilo principal.
+    """
+
     def __init__(self):
+        # CRÍTICO: add() y draw() corren en hilos distintos; el candado evita
+        # leer la posición mientras otro hilo la está cambiando.
         self._lock = threading.Lock()
+        # CRÍTICO: reset() crea x, y, theta, trail...; sin él draw() fallaría.
         self.reset()
 
     def reset(self):
+        """Pone el robot virtual en el origen mirando hacia arriba y borra el rastro."""
         with self._lock:
             self.x = self.y = 0.0
             self.theta = math.pi / 2          # Mirando "hacia arriba"
@@ -35,10 +45,16 @@ class MotionPreview:
             self.v = self.w = 0.0
 
     def add(self, motion, message):
-        """Llamado desde el hilo de envío con cada comando."""
+        """
+        Llamado desde el hilo de envío con cada comando.
+
+        motion  : (v en cm/s, ω en °/s, dt en s) que reporta el driver.
+        message : texto enviado al robot (o None).
+        """
         v, w_deg, dt = motion
         with self._lock:
             # Integración en sub-pasos para que los giros largos queden suaves
+            # (max(1, ...) asegura al menos un paso y evita dividir entre 0)
             steps = max(1, int(dt / 0.01))
             h = dt / steps
             for _ in range(steps):
@@ -52,7 +68,9 @@ class MotionPreview:
                 self.messages.append(message.strip() or "?")
 
     def draw(self):
+        """Devuelve la imagen de la ventana "Movimiento": cuadrícula, rastro, robot y mensajes."""
         img = np.full((SIZE, SIZE + 120, 3), 30, np.uint8)
+        # Copiar los datos dentro del candado y dibujar fuera (no bloquea al otro hilo)
         with self._lock:
             cx, cy = self.x, self.y
             trail = list(self.trail)
@@ -60,6 +78,7 @@ class MotionPreview:
             msgs = list(self.messages)
 
         # La vista sigue al robot: (cx, cy) queda en el centro
+        # (cm → px; la y se invierte porque en la imagen crece hacia abajo)
         def to_px(px, py):
             return (int(SIZE / 2 + (px - cx) * PX_PER_CM),
                     int(SIZE / 2 - (py - cy) * PX_PER_CM))
