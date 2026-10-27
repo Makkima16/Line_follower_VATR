@@ -58,7 +58,7 @@ LOST_STOP_S = 8.0                   # Sin línea tanto tiempo → parar por segu
 #   None                 → simulación (no se conecta nada, se ve en "Movimiento")
 #   "00:1B:10:21:2C:1B"  → MAC del mBot (socket RFCOMM, como master_pc/Robot.py)
 #   "/dev/rfcomm0"/"COM5"→ puerto serie (pyserial)
-ROBOT_ADDRESS = "00:1B:10:21:2C:1B"
+ROBOT_ADDRESS = "41:42:1A:C8:D9:3B"
 RFCOMM_CHANNEL = 1
 BAUD_RATE = 115200
 
