@@ -1,0 +1,16 @@
+Experimento: experimento_1
+Modelo: DenseNet121
+Épocas totales entrenadas: 10
+Mejor época seleccionada: 10
+============================================================
+
+              precision    recall  f1-score   support
+
+           0     0.7778    0.6364    0.7000        11
+           1     0.8333    0.8333    0.8333        12
+           2     0.8333    0.9091    0.8696        11
+           3     0.9286    1.0000    0.9630        13
+
+    accuracy                         0.8511        47
+   macro avg     0.8433    0.8447    0.8415        47
+weighted avg     0.8467    0.8511    0.8465        47

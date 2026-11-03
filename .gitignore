@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Dataset (large images, excluded to keep repo light)
+dataset/
+
+# Trained model weights (heavy .keras files)
+*.keras
+
+# Generated prediction outputs
+results/prediction/

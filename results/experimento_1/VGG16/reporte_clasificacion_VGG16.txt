@@ -1,0 +1,16 @@
+Experimento: experimento_1
+Modelo: VGG16
+Épocas totales entrenadas: 10
+Mejor época seleccionada: 10
+============================================================
+
+              precision    recall  f1-score   support
+
+           0     0.5455    0.5455    0.5455        11
+           1     0.4286    0.2500    0.3158        12
+           2     0.4444    0.7273    0.5517        11
+           3     1.0000    0.8462    0.9167        13
+
+    accuracy                         0.5957        47
+   macro avg     0.6046    0.5922    0.5824        47
+weighted avg     0.6177    0.5957    0.5910        47
