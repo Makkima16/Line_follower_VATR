@@ -1,0 +1,2 @@
+modelo,experimento,max_epochs,epoca_parada,mejor_epoca,train_loss,val_loss,accuracy,f1_ponderado,f1_macro,precision_macro,recall_macro,grafica_perdida,grafica_confusion,archivo_reporte
+VGG16,experimento_2,15,35,35,0.05081577226519585,0.020537132397294044,1.0,1.0,1.0,1.0,1.0,perdida_VGG16.png,matriz_confusion_VGG16.png,reporte_clasificacion_VGG16.txt

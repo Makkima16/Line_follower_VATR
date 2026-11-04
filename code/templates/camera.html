@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>📷 Cámara Robot</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #header {
+            padding: 10px 16px;
+            background: rgba(20, 20, 20, 0.95);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+            border-bottom: 1px solid #333;
+        }
+
+        #header h1 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        #status {
+            font-size: 13px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: #333;
+            transition: all 0.3s;
+        }
+
+        #status.connected { background: #1b5e20; color: #a5d6a7; }
+        #status.sending { background: #e65100; color: #ffcc80; }
+        #status.idle { background: #333; color: #aaa; }
+
+        #video-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #capture-canvas { display: none; }
+
+        #stats {
+            padding: 8px 16px;
+            background: rgba(20, 20, 20, 0.95);
+            display: flex;
+            justify-content: space-around;
+            font-size: 12px;
+            color: #aaa;
+            border-top: 1px solid #333;
+        }
+
+        #stats span { font-variant-numeric: tabular-nums; }
+
+        #controls {
+            padding: 12px 16px;
+            background: rgba(20, 20, 20, 0.95);
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        button {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        #btn-start {
+            background: #4caf50;
+            color: white;
+        }
+        #btn-start:active { background: #388e3c; }
+
+        #btn-stop {
+            background: #f44336;
+            color: white;
+        }
+        #btn-stop:active { background: #c62828; }
+
+        #btn-switch {
+            background: #2196f3;
+            color: white;
+        }
+        #btn-switch:active { background: #1565c0; }
+
+        /* Crosshair overlay */
+        #crosshair {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .crosshair-line {
+            position: absolute;
+            background: rgba(0, 255, 0, 0.3);
+        }
+
+        .crosshair-v {
+            width: 1px;
+            height: 100%;
+            left: 50%;
+        }
+
+        .crosshair-h {
+            height: 1px;
+            width: 100%;
+            top: 65%;
+        }
+
+        #roi-label {
+            position: absolute;
+            right: 8px;
+            top: calc(65% + 4px);
+            font-size: 11px;
+            color: rgba(0, 255, 0, 0.5);
+            z-index: 5;
+        }
+
+        /* Error / fallback notice */
+        #notice {
+            display: none;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.85);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            max-width: 90%;
+            z-index: 20;
+        }
+        #notice h2 { margin-bottom: 10px; font-size: 18px; }
+        #notice p { font-size: 14px; color: #ccc; line-height: 1.5; }
+        #notice a { color: #4fc3f7; }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>🤖 Seguidor de Línea</h1>
+        <span id="status" class="idle">Listo</span>
+    </div>
+
+    <div id="video-container">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="capture-canvas"></canvas>
+
+        <div id="crosshair">
+            <div class="crosshair-line crosshair-v"></div>
+            <div class="crosshair-line crosshair-h"></div>
+        </div>
+        <span id="roi-label">▼ ROI</span>
+
+        <div id="notice">
+            <h2>⚠️ Cámara no disponible</h2>
+            <p id="notice-text"></p>
+        </div>
+    </div>
+
+    <div id="stats">
+        <span>FPS: <strong id="fps-val">0</strong></span>
+        <span>Resolución: <strong id="res-val">—</strong></span>
+        <span>Enviados: <strong id="sent-val">0</strong></span>
+    </div>
+
+    <div id="controls">
+        <button id="btn-start">▶ Iniciar</button>
+        <button id="btn-stop" disabled>⏹ Parar</button>
+        <button id="btn-switch">🔄 Cámara</button>
+    </div>
+
+    <script>
+        // ─────────────────────────────────────────────────
+        //  CONFIGURACIÓN
+        // ─────────────────────────────────────────────────
+        const CONFIG = {
+            // Endpoint HTTP POST para enviar frames
+            postUrl: `${window.location.origin}/frame`,
+            targetFPS: 12,
+            jpegQuality: 0.55,
+            captureWidth: 320,
+            captureHeight: 240,
+        };
+
+        // ─────────────────────────────────────────────────
+        //  ELEMENTOS DOM
+        // ─────────────────────────────────────────────────
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('capture-canvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status');
+        const fpsEl = document.getElementById('fps-val');
+        const resEl = document.getElementById('res-val');
+        const sentEl = document.getElementById('sent-val');
+        const btnStart = document.getElementById('btn-start');
+        const btnStop = document.getElementById('btn-stop');
+        const btnSwitch = document.getElementById('btn-switch');
+        const noticeEl = document.getElementById('notice');
+        const noticeText = document.getElementById('notice-text');
+
+        // ─────────────────────────────────────────────────
+        //  ESTADO
+        // ─────────────────────────────────────────────────
+        let stream = null;
+        let sendInterval = null;
+        let frameCount = 0;
+        let totalSent = 0;
+        let lastFpsTime = Date.now();
+        let useFrontCamera = false;
+        let sending = false;  // Prevenir envíos simultáneos
+
+        // ─────────────────────────────────────────────────
+        //  DETECCIÓN DE SOPORTE DE CÁMARA
+        // ─────────────────────────────────────────────────
+
+        function hasCameraSupport() {
+            // Verificar si navigator.mediaDevices está disponible
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                return true;
+            }
+            // Fallback para navegadores antiguos
+            const getUserMedia = navigator.getUserMedia ||
+                                 navigator.webkitGetUserMedia ||
+                                 navigator.mozGetUserMedia ||
+                                 navigator.msGetUserMedia;
+            return !!getUserMedia;
+        }
+
+        // Polyfill para navegadores antiguos
+        function getCamera(constraints) {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                return navigator.mediaDevices.getUserMedia(constraints);
+            }
+
+            // Fallback para Safari antiguo
+            const getUserMedia = navigator.getUserMedia ||
+                                 navigator.webkitGetUserMedia ||
+                                 navigator.mozGetUserMedia;
+
+            if (!getUserMedia) {
+                return Promise.reject(new Error('getUserMedia no soportado'));
+            }
+
+            return new Promise((resolve, reject) => {
+                getUserMedia.call(navigator, constraints, resolve, reject);
+            });
+        }
+
+        // ─────────────────────────────────────────────────
+        //  CÁMARA
+        // ─────────────────────────────────────────────────
+        async function startCamera() {
+            if (stream) {
+                stream.getTracks().forEach(t => t.stop());
+            }
+
+            const constraints = {
+                video: {
+                    facingMode: useFrontCamera ? 'user' : 'environment',
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                },
+                audio: false,
+            };
+
+            try {
+                stream = await getCamera(constraints);
+                video.srcObject = stream;
+                await new Promise(resolve => { video.onloadedmetadata = resolve; });
+
+                canvas.width = CONFIG.captureWidth;
+                canvas.height = CONFIG.captureHeight;
+                resEl.textContent = `${CONFIG.captureWidth}×${CONFIG.captureHeight}`;
+
+                noticeEl.style.display = 'none';
+                console.log('[CAM] Cámara iniciada');
+                return true;
+            } catch (err) {
+                console.error('[CAM] Error:', err);
+                showNotice(err);
+                return false;
+            }
+        }
+
+        function showNotice(err) {
+            noticeEl.style.display = 'block';
+            const msg = err.message || err.name || String(err);
+
+            if (msg.includes('not allowed') || msg.includes('Permission')) {
+                noticeText.innerHTML = `
+                    Permiso de cámara denegado.<br><br>
+                    Ve a <b>Ajustes → Safari → Cámara</b><br>
+                    y selecciona <b>"Permitir"</b>.
+                `;
+            } else if (msg.includes('Secure') || msg.includes('getUserMedia')) {
+                noticeText.innerHTML = `
+                    Safari requiere HTTPS para la cámara.<br><br>
+                    Accede a:<br>
+                    <a href="${window.location.href.replace('http:', 'https:').replace(':8080', ':8443')}">${window.location.href.replace('http:', 'https:').replace(':8080', ':8443')}</a><br><br>
+                    Acepta el certificado y luego<br>
+                    presiona "Iniciar".
+                `;
+            } else {
+                noticeText.innerHTML = `Error: ${msg}`;
+            }
+        }
+
+        // ─────────────────────────────────────────────────
+        //  ENVÍO DE FRAMES (HTTP POST)
+        // ─────────────────────────────────────────────────
+        function startStreaming() {
+            const intervalMs = Math.round(1000 / CONFIG.targetFPS);
+
+            sendInterval = setInterval(() => {
+                if (!video.videoWidth || sending) return;
+
+                // Dibujar frame en canvas
+                ctx.drawImage(video, 0, 0, CONFIG.captureWidth, CONFIG.captureHeight);
+
+                // Convertir a JPEG blob y enviar por POST
+                canvas.toBlob(async (blob) => {
+                    if (!blob || sending) return;
+                    sending = true;
+
+                    try {
+                        const resp = await fetch(CONFIG.postUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'image/jpeg' },
+                            body: blob,
+                        });
+
+                        if (resp.ok) {
+                            totalSent++;
+                            sentEl.textContent = totalSent;
+                            updateStatus('connected', '● Enviando');
+                        } else {
+                            updateStatus('sending', '⚠ Error ' + resp.status);
+                        }
+                    } catch (e) {
+                        updateStatus('sending', '✕ Sin conexión');
+                    }
+
+                    sending = false;
+
+                    // Contar FPS
+                    frameCount++;
+                    const now = Date.now();
+                    const elapsed = now - lastFpsTime;
+                    if (elapsed >= 1000) {
+                        fpsEl.textContent = Math.round(frameCount * 1000 / elapsed);
+                        frameCount = 0;
+                        lastFpsTime = now;
+                    }
+                }, 'image/jpeg', CONFIG.jpegQuality);
+
+            }, intervalMs);
+
+            console.log(`[STREAM] Enviando a ${CONFIG.targetFPS} FPS vía HTTP POST`);
+        }
+
+        function stopStreaming() {
+            if (sendInterval) {
+                clearInterval(sendInterval);
+                sendInterval = null;
+            }
+            fpsEl.textContent = '0';
+            updateStatus('idle', 'Detenido');
+        }
+
+        // ─────────────────────────────────────────────────
+        //  UI
+        // ─────────────────────────────────────────────────
+        function updateStatus(cls, text) {
+            statusEl.className = cls;
+            statusEl.textContent = text;
+        }
+
+        // ─────────────────────────────────────────────────
+        //  EVENTS
+        // ─────────────────────────────────────────────────
+        btnStart.addEventListener('click', async () => {
+            const ok = await startCamera();
+            if (ok) {
+                startStreaming();
+                btnStart.disabled = true;
+                btnStop.disabled = false;
+            }
+        });
+
+        btnStop.addEventListener('click', () => {
+            stopStreaming();
+            if (stream) {
+                stream.getTracks().forEach(t => t.stop());
+                stream = null;
+            }
+            btnStart.disabled = false;
+            btnStop.disabled = true;
+        });
+
+        btnSwitch.addEventListener('click', async () => {
+            useFrontCamera = !useFrontCamera;
+            await startCamera();
+        });
+
+        // No auto-iniciar la cámara (evita el error en HTTP)
+        // El usuario presiona "Iniciar" manualmente
+    </script>
+</body>
+</html>

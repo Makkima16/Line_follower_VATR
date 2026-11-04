@@ -13,18 +13,15 @@ CLASSES = {
     1: "siga",
     2: "velocidad",
     3: "zona escolar",
+    4: "fondo",
 }
 
 MODELS = {
     "VGG16": applications.vgg16.preprocess_input,
-    "VGG19": applications.vgg19.preprocess_input,
-    "MobileNet": applications.mobilenet.preprocess_input,
-    "ResNet50": applications.resnet50.preprocess_input,
-    "DenseNet121": applications.densenet.preprocess_input,
 }
 
 IMG_SIZE = (224, 224)
-EXPERIMENTO_DIR = os.path.join("results", "experimento_1")
+EXPERIMENTO_DIR = os.path.join("results", "experimento_2")
 RESULTADOS_DIR = "results"
 TEST_IMG_DIR = "test_img"
 IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}

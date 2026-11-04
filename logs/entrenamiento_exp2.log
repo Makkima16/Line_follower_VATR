@@ -1,0 +1,105 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1793731240.831804   11559 cudart_stub.cc:31] Could not find cuda drivers on your machine, GPU will not be used.
+I0000 00:00:1793731241.242483   11559 cpu_feature_guard.cc:227] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1793731242.974411   11559 cudart_stub.cc:31] Could not find cuda drivers on your machine, GPU will not be used.
+E0000 00:00:1793731244.917777   11559 cuda_platform.cc:52] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: UNKNOWN ERROR (303)
+/home/makkima16/Universidad/Vision_artificial/Line_follower_VATR/.venv/lib/python3.13/site-packages/keras/src/trainers/epoch_iterator.py:74: UserWarning: `shuffle=True` was passed, but will be ignored since the data `x` was provided as a tf.data.Dataset. The Dataset is expected to already be shuffled (via `.shuffle(buffer_size)`).
+  self.data_adapter = data_adapters.get_data_adapter(
+
+===== Entrenando VGG16 (Experimento: experimento_2) =====
+Epoch 1/15
+14/14 - 58s - 4s/step - accuracy: 0.2381 - loss: 5.0200 - val_accuracy: 0.2975 - val_loss: 4.2341
+Epoch 2/15
+14/14 - 52s - 4s/step - accuracy: 0.2881 - loss: 4.0999 - val_accuracy: 0.3058 - val_loss: 3.5649
+Epoch 3/15
+14/14 - 52s - 4s/step - accuracy: 0.3095 - loss: 3.8238 - val_accuracy: 0.3636 - val_loss: 3.1594
+Epoch 4/15
+14/14 - 53s - 4s/step - accuracy: 0.3833 - loss: 3.0939 - val_accuracy: 0.4463 - val_loss: 2.6057
+Epoch 5/15
+14/14 - 53s - 4s/step - accuracy: 0.4167 - loss: 2.9317 - val_accuracy: 0.4793 - val_loss: 2.5666
+Epoch 6/15
+14/14 - 55s - 4s/step - accuracy: 0.4690 - loss: 2.6100 - val_accuracy: 0.4876 - val_loss: 2.4702
+Epoch 7/15
+14/14 - 59s - 4s/step - accuracy: 0.4929 - loss: 2.2567 - val_accuracy: 0.5207 - val_loss: 2.2762
+Epoch 8/15
+14/14 - 58s - 4s/step - accuracy: 0.4929 - loss: 2.3031 - val_accuracy: 0.5702 - val_loss: 2.1301
+Epoch 9/15
+14/14 - 59s - 4s/step - accuracy: 0.4762 - loss: 2.1352 - val_accuracy: 0.5950 - val_loss: 1.8782
+Epoch 10/15
+14/14 - 56s - 4s/step - accuracy: 0.5238 - loss: 1.9260 - val_accuracy: 0.6281 - val_loss: 1.9946
+Epoch 11/15
+14/14 - 54s - 4s/step - accuracy: 0.5714 - loss: 1.7662 - val_accuracy: 0.6281 - val_loss: 1.6858
+Epoch 12/15
+14/14 - 54s - 4s/step - accuracy: 0.5881 - loss: 1.6394 - val_accuracy: 0.6116 - val_loss: 1.9068
+Epoch 13/15
+14/14 - 59s - 4s/step - accuracy: 0.6095 - loss: 1.5201 - val_accuracy: 0.6198 - val_loss: 1.8209
+Epoch 14/15
+14/14 - 60s - 4s/step - accuracy: 0.6262 - loss: 1.4685 - val_accuracy: 0.6612 - val_loss: 1.7149
+Epoch 15/15
+14/14 - 54s - 4s/step - accuracy: 0.6524 - loss: 1.2075 - val_accuracy: 0.6860 - val_loss: 1.5353
+Restoring model weights from the end of the best epoch: 15.
+
+--- Fine-tuning: descongelando las últimas 4 capas de la base ---
+Epoch 1/20
+14/14 - 63s - 5s/step - accuracy: 0.6881 - loss: 1.1562 - val_accuracy: 0.7273 - val_loss: 1.2213
+Epoch 2/20
+14/14 - 487s - 35s/step - accuracy: 0.7643 - loss: 0.7349 - val_accuracy: 0.7603 - val_loss: 0.7789
+Epoch 3/20
+14/14 - 47s - 3s/step - accuracy: 0.8381 - loss: 0.4972 - val_accuracy: 0.8017 - val_loss: 0.6584
+Epoch 4/20
+14/14 - 49s - 4s/step - accuracy: 0.8690 - loss: 0.3598 - val_accuracy: 0.8512 - val_loss: 0.4258
+Epoch 5/20
+14/14 - 62s - 4s/step - accuracy: 0.9071 - loss: 0.2282 - val_accuracy: 0.8926 - val_loss: 0.3660
+Epoch 6/20
+14/14 - 61s - 4s/step - accuracy: 0.9238 - loss: 0.2219 - val_accuracy: 0.9256 - val_loss: 0.2253
+Epoch 7/20
+14/14 - 61s - 4s/step - accuracy: 0.9476 - loss: 0.1474 - val_accuracy: 0.9256 - val_loss: 0.1819
+Epoch 8/20
+14/14 - 64s - 5s/step - accuracy: 0.9738 - loss: 0.1187 - val_accuracy: 0.9504 - val_loss: 0.1388
+Epoch 9/20
+14/14 - 61s - 4s/step - accuracy: 0.9690 - loss: 0.1039 - val_accuracy: 0.9504 - val_loss: 0.1091
+Epoch 10/20
+14/14 - 59s - 4s/step - accuracy: 0.9595 - loss: 0.0980 - val_accuracy: 0.9669 - val_loss: 0.0887
+Epoch 11/20
+14/14 - 59s - 4s/step - accuracy: 0.9619 - loss: 0.1136 - val_accuracy: 0.9752 - val_loss: 0.0682
+Epoch 12/20
+14/14 - 57s - 4s/step - accuracy: 0.9762 - loss: 0.0694 - val_accuracy: 0.9835 - val_loss: 0.0627
+Epoch 13/20
+14/14 - 61s - 4s/step - accuracy: 0.9881 - loss: 0.0644 - val_accuracy: 0.9917 - val_loss: 0.0426
+Epoch 14/20
+14/14 - 61s - 4s/step - accuracy: 0.9881 - loss: 0.0420 - val_accuracy: 0.9917 - val_loss: 0.0338
+Epoch 15/20
+14/14 - 58s - 4s/step - accuracy: 0.9952 - loss: 0.0291 - val_accuracy: 0.9917 - val_loss: 0.0393
+Epoch 16/20
+14/14 - 62s - 4s/step - accuracy: 0.9881 - loss: 0.0392 - val_accuracy: 0.9917 - val_loss: 0.0289
+Epoch 17/20
+14/14 - 61s - 4s/step - accuracy: 0.9905 - loss: 0.0375 - val_accuracy: 0.9917 - val_loss: 0.0292
+Epoch 18/20
+14/14 - 61s - 4s/step - accuracy: 0.9881 - loss: 0.0341 - val_accuracy: 0.9917 - val_loss: 0.0311
+Epoch 19/20
+14/14 - 62s - 4s/step - accuracy: 0.9952 - loss: 0.0293 - val_accuracy: 0.9917 - val_loss: 0.0312
+Epoch 20/20
+14/14 - 61s - 4s/step - accuracy: 0.9810 - loss: 0.0508 - val_accuracy: 0.9917 - val_loss: 0.0205
+Restoring model weights from the end of the best epoch: 20.
+Gráfica de pérdida guardada: results/experimento_2/VGG16/perdida_VGG16.png
+Matriz de confusión guardada: results/experimento_2/VGG16/matriz_confusion_VGG16.png
+
+--- Reporte de Clasificación (VGG16) ---
+              precision    recall  f1-score   support
+
+           0     1.0000    1.0000    1.0000        12
+           1     1.0000    1.0000    1.0000        13
+           2     1.0000    1.0000    1.0000        13
+           3     1.0000    1.0000    1.0000        14
+           4     1.0000    1.0000    1.0000         9
+
+    accuracy                         1.0000        61
+   macro avg     1.0000    1.0000    1.0000        61
+weighted avg     1.0000    1.0000    1.0000        61
+
+Reporte de clasificación guardado: results/experimento_2/VGG16/reporte_clasificacion_VGG16.txt
+Modelo guardado: results/experimento_2/VGG16/VGG16.keras
+
+Resumen del experimento guardado en: results/experimento_2/resultados.csv

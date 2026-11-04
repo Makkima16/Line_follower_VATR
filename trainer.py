@@ -1,5 +1,6 @@
 import csv
 import os
+from types import SimpleNamespace
 
 import keras
 import matplotlib
@@ -15,10 +16,6 @@ from sklearn.model_selection import train_test_split
 
 MODELOS = {
     "VGG16": (applications.VGG16, applications.vgg16.preprocess_input),
-    "VGG19": (applications.VGG19, applications.vgg19.preprocess_input),
-    "MobileNet": (applications.MobileNet, applications.mobilenet.preprocess_input),
-    "ResNet50": (applications.ResNet50, applications.resnet50.preprocess_input),
-    "DenseNet121": (applications.DenseNet121, applications.densenet.preprocess_input),
 }
 
 
@@ -39,6 +36,10 @@ class CNNTrainer:
         seed=42,
         output_dir="resultados",
         experimento="experimento_1",
+        augmentar=False,
+        fine_tune_capas=0,
+        epocas_fine_tune=0,
+        lr_fine_tune=1e-5,
     ):
         self.dataset_dir = dataset_dir
         self.img_size = img_size
@@ -52,6 +53,13 @@ class CNNTrainer:
         self.output_dir = output_dir
         self.experimento = experimento
         self.exp_dir = os.path.join(self.output_dir, self.experimento)
+        # Data augmentation solo en entrenamiento (sobre píxeles 0-255, antes del preprocesado)
+        self.augmentar = augmentar
+        # Fine-tuning: tras entrenar la cabeza, se descongelan las últimas N capas de la base
+        # y se sigue entrenando `epocas_fine_tune` épocas con una tasa de aprendizaje baja.
+        self.fine_tune_capas = fine_tune_capas
+        self.epocas_fine_tune = epocas_fine_tune
+        self.lr_fine_tune = lr_fine_tune
         self.historiales = {}
         os.makedirs(self.exp_dir, exist_ok=True)
         self._cargar_datos()
@@ -135,7 +143,27 @@ class CNNTrainer:
         ds = path_ds.map(_cargar, num_parallel_calls=tf.data.AUTOTUNE)
         return ds.batch(self.batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
+    def _crear_augmentacion(self):
+        """Giros leves, zoom, desplazamiento, brillo y contraste. Sin volteo horizontal:
+        el texto de las señales (PARE, SIGA) no debe verse en espejo."""
+        return keras.Sequential(
+            [
+                layers.RandomRotation(0.08, seed=self.seed),
+                layers.RandomZoom((-0.2, 0.2), seed=self.seed),
+                layers.RandomTranslation(0.1, 0.1, seed=self.seed),
+                layers.RandomBrightness(0.25, value_range=(0, 255), seed=self.seed),
+                layers.RandomContrast(0.25, seed=self.seed),
+            ],
+            name="augmentacion",
+        )
+
     def _preparar(self, ds, preprocess, entrenar=False):
+        if entrenar and self.augmentar:
+            aug = self._crear_augmentacion()
+            ds = ds.map(
+                lambda x, y: (tf.clip_by_value(aug(x, training=True), 0.0, 255.0), y),
+                num_parallel_calls=tf.data.AUTOTUNE,
+            )
         ds = ds.map(
             lambda x, y: (preprocess(tf.cast(x, tf.float32)), y),
             num_parallel_calls=tf.data.AUTOTUNE,
@@ -185,6 +213,33 @@ class CNNTrainer:
             callbacks=[early],
             verbose=2,
         )
+        historial = {k: list(v) for k, v in hist.history.items()}
+
+        if self.fine_tune_capas > 0 and self.epocas_fine_tune > 0:
+            print(f"\n--- Fine-tuning: descongelando las últimas {self.fine_tune_capas} capas de la base ---")
+            # Las últimas 3 capas son GlobalAveragePooling, Dropout y Dense (la cabeza)
+            capas_base = modelo.layers[:-3]
+            for capa in capas_base[-self.fine_tune_capas:]:
+                capa.trainable = True
+            modelo.compile(
+                optimizer=tf.keras.optimizers.Adam(self.lr_fine_tune),
+                loss="sparse_categorical_crossentropy",
+                metrics=["accuracy"],
+            )
+            early_ft = tf.keras.callbacks.EarlyStopping(
+                monitor="val_loss", patience=self.patience, restore_best_weights=True, verbose=1
+            )
+            hist_ft = modelo.fit(
+                train,
+                validation_data=val,
+                epochs=self.epocas_fine_tune,
+                callbacks=[early_ft],
+                verbose=2,
+            )
+            for k, v in hist_ft.history.items():
+                historial.setdefault(k, []).extend(v)
+
+        hist = SimpleNamespace(history=historial)  # Mismo acceso (.history) que devuelve fit()
 
         y_true = np.concatenate([y.numpy() for _, y in test])
         y_pred = np.argmax(modelo.predict(test, verbose=0), axis=1)
