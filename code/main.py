@@ -179,10 +179,10 @@ def draw_overlay(frame, line, roi_ratio, snap, last_msg, fps, scale, signal=None
         # Borde de la ventana del color de la señal
         cv2.rectangle(view, (0, 0), (vw - 1, vh - 1), sig_color, 4)
 
-    # ── Cuenta regresiva PARE ─────────────────────────────────────────────
+    # ── Estado PARE ─────────────────────────────────────────────────────────
     if snap["state"] == State.PARE:
-        remaining = snap.get("stop_remaining", 0)
-        pare_txt = f"PARE - Detenido {remaining:.1f}s"
+        remaining = snap.get("stop_remaining")
+        pare_txt = f"PARE - Detenido {remaining:.1f}s" if remaining is not None else "PARE - Esperando SIGA"
         put_text(view, pare_txt, (vw // 2 - 100, vh // 2), (0, 0, 255), 0.8)
         # Borde rojo parpadeante
         if int(time.monotonic() * 4) % 2 == 0:
