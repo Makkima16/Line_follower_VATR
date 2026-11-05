@@ -20,6 +20,7 @@ Teclas: q = salir, espacio = pausar/reanudar, r = reiniciar trayectoria simulada
 """
 
 import argparse
+import os
 import time
 
 import cv2
@@ -206,6 +207,11 @@ def draw_overlay(frame, line, roi_ratio, snap, last_msg, fps, scale, signal=None
     if sig_label:
         sig_c = (0, 0, 255) if sig_label == "PARE" else (0, 200, 0)
         put_text(view, f"Senal: {sig_label}", (10, 104), sig_c, 0.55)
+    # Política de velocidad (reto parte 2: normal/reducida)
+    sp = snap.get("speed_policy")
+    if sp:
+        sp_c = (0, 200, 255) if sp == "reduced" else (0, 200, 0)
+        put_text(view, f"Velocidad: {sp}", (10, 130), sp_c, 0.55)
     put_text(view, f"{fps:4.1f} FPS", (vw - 95, 24))
     return view
 
@@ -325,7 +331,7 @@ def run(cap, brain, sender, preview, args):
 
 
 def parse_args():
-    """Lee las opciones de la línea de comandos (--camara, --video, --robot, --driver, --escala)."""
+    """Lee las opciones de la línea de comandos (--camara, --video, --robot, --driver, --escala, --experimento, --modelo)."""
     p = argparse.ArgumentParser(description="Robot seguidor de línea")
     p.add_argument("--camara", choices=("phone", "usb"), default=config.CAMERA_SOURCE)
     p.add_argument("--video", help="Procesar un archivo de video en vez de la cámara")
@@ -333,12 +339,27 @@ def parse_args():
                    help="MAC o puerto serie del robot (sin esto: simulación)")
     p.add_argument("--driver", choices=list(DRIVERS), default=config.DRIVER)
     p.add_argument("--escala", type=float, default=config.DISPLAY_SCALE)
+    p.add_argument("--experimento", default=None,
+                   help="Carpeta bajo results/ con el modelo CNN (default: config.VGG16_EXPERIMENTO)")
+    p.add_argument("--modelo", default=None,
+                   help="Nombre del modelo CNN dentro de la carpeta del experimento (default: VGG16)")
     return p.parse_args()
 
 
 def main():
     """Crea las piezas (driver, Brain, Robot, vista), conecta, arranca el hilo de envío y el bucle."""
     args = parse_args()
+    # Selección de experimento/modelo CNN vía CLI: sobrescribe config y resetea el módulo
+    if args.experimento:
+        config.VGG16_EXPERIMENTO = args.experimento
+    if args.modelo:
+        import senales_vgg16
+        senales_vgg16.RUTA_MODELO = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..",
+            "results", config.VGG16_EXPERIMENTO, args.modelo, f"{args.modelo}.keras")
+        senales_vgg16._modelo = None
+        senales_vgg16._contador = 0
+        senales_vgg16._ultimo = None
     driver = make_driver(args.driver)
     brain = Brain(driver)
     robot = Robot(args.robot)

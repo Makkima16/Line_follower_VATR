@@ -17,3 +17,4 @@ dataset/
 
 # Generated prediction outputs
 results/prediction/
+.omo/

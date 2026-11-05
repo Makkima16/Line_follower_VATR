@@ -10,6 +10,7 @@ import threading
 import time
 
 import config
+import policy
 from mapa import Navigator
 
 
@@ -101,14 +102,15 @@ class Brain:
         self._uturn_from = 0.0           # Giro acumulado de la odometría al empezar la media vuelta
         self._no_junction_until = 0.0    # Distancia (odometría) hasta la que se ignoran cruces
         # Señales de tráfico (objetivos 5 y 6 del reto)
-        self.signal = None               # "PARE" o "SIGA", última señal que actuó
+        self.signal = None               # "PARE"/"SIGA"/"ZONA ESCOLAR"/"VELOCIDAD 60", última señal que actuó
         self.stop_duration = config.STOP_DURATION_S   # [TB]
-        self.stop_until = 0.0            # Hasta cuándo permanecer en PARE
+        self.stop_until = 0.0            # Hasta cuándo permanecer en PARE (None = esperar a SIGA)
         self.signal_cover_until = 0.0    # Hasta cuándo la línea puede estar tapada por la señal
+        self._speed_policy = policy.SpeedPolicy.NORMAL   # Política de velocidad actual (reto parte 2)
         self._sig_label = None           # Etiqueta vista en los últimos frames
         self._sig_count = 0              # Frames seguidos con esa etiqueta
         self._sig_last_seen = -1e9       # Última vez que se vio alguna señal
-        self._sig_armed = {"PARE": True, "SIGA": True}
+        self._sig_armed = {"PARE": True, "SIGA": True, "ZONA ESCOLAR": True, "VELOCIDAD 60": True}
         self._now = 0.0                  # Reloj del último frame (el simulador usa uno propio)
 
     # ── Hilo de video ──────────────────────────────────────────────────────
@@ -124,6 +126,9 @@ class Brain:
                 self.u = 0.0
                 return
             if self.state == State.PARE:
+                if self.stop_until is None:
+                    self.u = 0.0           # PARE sin temporizador: espera a SIGA (reto parte 2)
+                    return
                 if now < self.stop_until:
                     self.u = 0.0           # Quieto; next_command tampoco lo mueve
                     return
@@ -321,29 +326,40 @@ class Brain:
             if label is None:
                 self._sig_count = 0
                 if now - self._sig_last_seen > config.SIGNAL_COOLDOWN_S:
-                    self._sig_armed = {"PARE": True, "SIGA": True}
+                    self._sig_armed = {"PARE": True, "SIGA": True, "ZONA ESCOLAR": True, "VELOCIDAD 60": True}
                 return
             self._sig_last_seen = now
             self.signal_cover_until = now + config.SIGNAL_COVER_GRACE_S
             self._no_junction_until = self.nav.odom.dist + config.CROSSBAR_IGNORE_CM
             self._sig_count = self._sig_count + 1 if label == self._sig_label else 1
             self._sig_label = label
-            if self._sig_count < config.SIGNAL_CONFIRM_FRAMES or not self._sig_armed[label]:
+            if self._sig_count < config.SIGNAL_CONFIRM_FRAMES or not self._sig_armed.get(label, False):
                 return
 
-            if label == "PARE" and self.state in (State.SIGUIENDO, State.BUSCANDO):
-                self._sig_armed["PARE"] = False
-                self.state = State.PARE
-                self.stop_until = now + self.stop_duration
-                self.u = 0.0
-                self.signal = "PARE"
-                print(f"[CONTROL] Señal PARE detectada → detenido {self.stop_duration:.1f}s")
-            elif label == "SIGA":
-                self._sig_armed["SIGA"] = False
-                self.signal = "SIGA"
-                if self.state == State.PARE:
-                    self.stop_until = now          # SIGA reanuda la marcha de inmediato
-                print("[CONTROL] Señal SIGA detectada")
+            dec = policy.apply_signal(label, self.state, self._speed_policy, now, config)
+            if dec.cover_until is not None:
+                self.signal_cover_until = dec.cover_until
+            if dec.disarm:
+                for s in dec.disarm:
+                    self._sig_armed[s] = False
+            if dec.speed_policy != self._speed_policy:
+                self._speed_policy = dec.speed_policy
+                self.driver.set_speed_policy(str(dec.speed_policy.value))
+            if dec.acted:
+                self.signal = label
+                if dec.new_state != self.state:
+                    if dec.new_state == State.PARE:
+                        self.state = State.PARE
+                        self.stop_until = dec.stop_until   # None = espera a SIGA
+                        self.u = 0.0
+                        print("[CONTROL] Señal PARE detectada → detenido hasta SIGA")
+                    elif dec.new_state == State.SIGUIENDO and self.state == State.PARE:
+                        print("[CONTROL] SIGA detectada → reanudando")
+                        self._resume()
+                if label == "ZONA ESCOLAR":
+                    print("[CONTROL] ZONA ESCOLAR → velocidad reducida")
+                elif label == "VELOCIDAD 60":
+                    print("[CONTROL] VELOCIDAD 60 → velocidad normal")
 
     def snapshot(self):
         """Copia del estado actual (para dibujarlo en pantalla sin tocar los datos reales)."""
@@ -351,7 +367,8 @@ class Brain:
             return {"state": self.state, "u": self.u, "error": self.error,
                     "line_found": self.line_found, "paused": self.paused,
                     "signal": self.signal, "nav_mode": self.nav.mode,
-                    "stop_remaining": max(0.0, self.stop_until - self._now)}
+                    "speed_policy": str(self._speed_policy.value),
+                    "stop_remaining": max(0.0, self.stop_until - self._now) if self.stop_until is not None else None}
 
     def map_snapshot(self):
         """Copia del mapa (para mapa.draw_map, que dibuja fuera del candado)."""

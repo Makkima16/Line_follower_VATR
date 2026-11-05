@@ -92,7 +92,7 @@ check("estado final es PARE", brain.state == control.State.PARE, brain.state.val
 
 print()
 print("=" * 70)
-print("4. PARE mantiene la parada STOP_DURATION_S y luego reanuda")
+print("4. PARE permanece detenido hasta SIGA (reto parte 2: sin auto-reanudar)")
 print("=" * 70)
 
 brain2 = control.Brain(make_driver("pulsos"))
@@ -102,15 +102,22 @@ for _ in range(config.SIGNAL_CONFIRM_FRAMES + 1):
     brain2.on_signal("PARE", t, partial=False)
     t += 0.1
 check("detenido tras confirmar", brain2.state == control.State.PARE, brain2.state.value)
+check("PARE sin temporizador (espera a SIGA)", brain2.stop_until is None,
+      f"stop_until={brain2.stop_until}")
 
 brain2.on_frame(line_dummy(), now=t + config.STOP_DURATION_S * 0.4)
-check("sigue PARE dentro de STOP_DURATION_S",
+check("sigue PARE dentro de STOP_DURATION_S (ya no hay temporizador)",
       brain2.state == control.State.PARE,
       f"a {config.STOP_DURATION_S * 0.4:.1f}s de {config.STOP_DURATION_S}s")
 
-brain2.on_frame(line_dummy(), now=t + config.STOP_DURATION_S + 0.4)
-check("reanuda pasado STOP_DURATION_S",
-      brain2.state != control.State.PARE, brain2.state.value)
+brain2.on_frame(line_dummy(), now=t + config.STOP_DURATION_S + 10.0)
+check("sigue PARE pasado STOP_DURATION_S (espera SIGA)",
+      brain2.state == control.State.PARE, brain2.state.value)
+
+# SIGA reanuda
+for _ in range(config.SIGNAL_CONFIRM_FRAMES):
+    brain2.on_signal("SIGA", t + 20.0)
+check("SIGA reanuda desde PARE", brain2.state == control.State.SIGUIENDO, brain2.state.value)
 
 print()
 print("=" * 70)
