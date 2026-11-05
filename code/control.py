@@ -63,7 +63,7 @@ class State(enum.Enum):
     SIGUIENDO = "SIGUIENDO"      # Línea a la vista, control PD
     BUSCANDO = "BUSCANDO"        # Línea perdida: gira hacia el último lado visto
     DETENIDO = "DETENIDO"        # Sin línea demasiado tiempo: parado por seguridad
-    PARE = "PARE"                # Señal de Pare: detenido stop_duration s y reanuda solo
+    PARE = "PARE"                # Señal de Pare: detenido hasta ver SIGA (reto parte 2)
     MEDIA_VUELTA = "MEDIA VUELTA"  # Callejón sin salida: gira en sitio para regresar
     FIN = "FIN"                  # Mapa agotado: no queda ninguna rama por explorar
 
@@ -145,6 +145,7 @@ class Brain:
         """Vuelve a SIGUIENDO sin heredar la derivada ni el acumulador del driver."""
         self.state = State.SIGUIENDO
         self.lost_since = None
+        self.stop_until = 0.0
         self.pd.reset()
         self.driver.reset()
         self._error_init = False

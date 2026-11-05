@@ -70,7 +70,6 @@ def create_trackbars(driver):
     cv2.createTrackbar("Giros max", WIN_TUNE, config.MAX_TURN_PULSES, 10, nop)
     cv2.createTrackbar("Acelerador %", WIN_TUNE, int(config.FORWARD_DUTY * 100), 100, nop)
     cv2.createTrackbar("Vel. base", WIN_TUNE, config.BASE_SPEED, config.MAX_SPEED, nop)
-    cv2.createTrackbar("Dur. PARE [s]", WIN_TUNE, int(config.STOP_DURATION_S), 10, nop)
 
 
 def read_trackbars(brain):
@@ -91,7 +90,6 @@ def read_trackbars(brain):
             driver.forward_duty = tb("Acelerador %") / 100.0
         else:
             driver.base = tb("Vel. base")
-        brain.stop_duration = float(tb("Dur. PARE [s]"))
     return (tb("Umbral (0=Otsu)"),
             max(tb("ROI %"), 10) / 100.0,
             tb("Peso cercano %") / 100.0,
