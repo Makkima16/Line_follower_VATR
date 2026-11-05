@@ -18,6 +18,9 @@ CLASSES = {
 
 MODELS = {
     "VGG16": applications.vgg16.preprocess_input,
+    "ResNet50": applications.resnet50.preprocess_input,
+    "MobileNetV2": applications.mobilenet_v2.preprocess_input,
+    "EfficientNetB0": applications.efficientnet.preprocess_input,
 }
 
 IMG_SIZE = (224, 224)

@@ -53,6 +53,12 @@ class PulseDriver:
     def stop_message(self):          # Devuelve el mensaje para detener el robot
         return self.cmd["stop"]      # Letra 'x' (por defecto)
 
+    def set_speed_policy(self, policy):                          # Cambia la política de velocidad ("normal"|"reduced")
+        if policy == "reduced":
+            self.forward_duty = config.REDUCED_FORWARD_DUTY
+        else:
+            self.forward_duty = config.FORWARD_DUTY
+
     def describe(self, mensaje):
         if mensaje is None:
             return "-"
@@ -143,6 +149,12 @@ class SpeedDriver:
 
     def stop_message(self):                                   # Devuelve el mensaje para detener el robot
         return config.SPEED_FORMAT.format(left=0, right=0)    # "V:0,0\n"
+
+    def set_speed_policy(self, policy):                       # Cambia la política de velocidad ("normal"|"reduced")
+        if policy == "reduced":
+            self.base = config.REDUCED_BASE_SPEED
+        else:
+            self.base = config.BASE_SPEED
 
     def describe(self, mensaje):
         if mensaje is None:

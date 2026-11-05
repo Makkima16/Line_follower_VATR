@@ -25,7 +25,7 @@ from senales import SignalResult   # Mismo contenedor de datos que la versión c
 
 # Orden de las carpetas del dataset (0, 1, 2, 3, 4), igual que en predict.py
 CLASES = ["pare", "siga", "velocidad", "zona escolar", "fondo"]
-ETIQUETA_ROBOT = {"pare": "PARE", "siga": "SIGA"}   # Las únicas que mueven la máquina de estados
+ETIQUETA_ROBOT = {"pare": "PARE", "siga": "SIGA", "zona escolar": "ZONA ESCOLAR", "velocidad": "VELOCIDAD 60"}   # fondo queda fuera: no mueve la máquina de estados
 
 IMG_SIZE = (224, 224)
 RUTA_MODELO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",

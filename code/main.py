@@ -20,6 +20,7 @@ Teclas: q = salir, espacio = pausar/reanudar, r = reiniciar trayectoria simulada
 """
 
 import argparse
+import os
 import time
 
 import cv2
@@ -69,7 +70,6 @@ def create_trackbars(driver):
     cv2.createTrackbar("Giros max", WIN_TUNE, config.MAX_TURN_PULSES, 10, nop)
     cv2.createTrackbar("Acelerador %", WIN_TUNE, int(config.FORWARD_DUTY * 100), 100, nop)
     cv2.createTrackbar("Vel. base", WIN_TUNE, config.BASE_SPEED, config.MAX_SPEED, nop)
-    cv2.createTrackbar("Dur. PARE [s]", WIN_TUNE, int(config.STOP_DURATION_S), 10, nop)
 
 
 def read_trackbars(brain):
@@ -90,7 +90,6 @@ def read_trackbars(brain):
             driver.forward_duty = tb("Acelerador %") / 100.0
         else:
             driver.base = tb("Vel. base")
-        brain.stop_duration = float(tb("Dur. PARE [s]"))
     return (tb("Umbral (0=Otsu)"),
             max(tb("ROI %"), 10) / 100.0,
             tb("Peso cercano %") / 100.0,
@@ -178,10 +177,10 @@ def draw_overlay(frame, line, roi_ratio, snap, last_msg, fps, scale, signal=None
         # Borde de la ventana del color de la señal
         cv2.rectangle(view, (0, 0), (vw - 1, vh - 1), sig_color, 4)
 
-    # ── Cuenta regresiva PARE ─────────────────────────────────────────────
+    # ── Estado PARE ─────────────────────────────────────────────────────────
     if snap["state"] == State.PARE:
-        remaining = snap.get("stop_remaining", 0)
-        pare_txt = f"PARE - Detenido {remaining:.1f}s"
+        remaining = snap.get("stop_remaining")
+        pare_txt = f"PARE - Detenido {remaining:.1f}s" if remaining is not None else "PARE - Esperando SIGA"
         put_text(view, pare_txt, (vw // 2 - 100, vh // 2), (0, 0, 255), 0.8)
         # Borde rojo parpadeante
         if int(time.monotonic() * 4) % 2 == 0:
@@ -206,6 +205,11 @@ def draw_overlay(frame, line, roi_ratio, snap, last_msg, fps, scale, signal=None
     if sig_label:
         sig_c = (0, 0, 255) if sig_label == "PARE" else (0, 200, 0)
         put_text(view, f"Senal: {sig_label}", (10, 104), sig_c, 0.55)
+    # Política de velocidad (reto parte 2: normal/reducida)
+    sp = snap.get("speed_policy")
+    if sp:
+        sp_c = (0, 200, 255) if sp == "reduced" else (0, 200, 0)
+        put_text(view, f"Velocidad: {sp}", (10, 130), sp_c, 0.55)
     put_text(view, f"{fps:4.1f} FPS", (vw - 95, 24))
     return view
 
@@ -325,7 +329,7 @@ def run(cap, brain, sender, preview, args):
 
 
 def parse_args():
-    """Lee las opciones de la línea de comandos (--camara, --video, --robot, --driver, --escala)."""
+    """Lee las opciones de la línea de comandos (--camara, --video, --robot, --driver, --escala, --experimento, --modelo)."""
     p = argparse.ArgumentParser(description="Robot seguidor de línea")
     p.add_argument("--camara", choices=("phone", "usb"), default=config.CAMERA_SOURCE)
     p.add_argument("--video", help="Procesar un archivo de video en vez de la cámara")
@@ -333,12 +337,27 @@ def parse_args():
                    help="MAC o puerto serie del robot (sin esto: simulación)")
     p.add_argument("--driver", choices=list(DRIVERS), default=config.DRIVER)
     p.add_argument("--escala", type=float, default=config.DISPLAY_SCALE)
+    p.add_argument("--experimento", default=None,
+                   help="Carpeta bajo results/ con el modelo CNN (default: config.VGG16_EXPERIMENTO)")
+    p.add_argument("--modelo", default=None,
+                   help="Nombre del modelo CNN dentro de la carpeta del experimento (default: VGG16)")
     return p.parse_args()
 
 
 def main():
     """Crea las piezas (driver, Brain, Robot, vista), conecta, arranca el hilo de envío y el bucle."""
     args = parse_args()
+    # Selección de experimento/modelo CNN vía CLI: sobrescribe config y resetea el módulo
+    if args.experimento:
+        config.VGG16_EXPERIMENTO = args.experimento
+    if args.modelo:
+        import senales_vgg16
+        senales_vgg16.RUTA_MODELO = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..",
+            "results", config.VGG16_EXPERIMENTO, args.modelo, f"{args.modelo}.keras")
+        senales_vgg16._modelo = None
+        senales_vgg16._contador = 0
+        senales_vgg16._ultimo = None
     driver = make_driver(args.driver)
     brain = Brain(driver)
     robot = Robot(args.robot)

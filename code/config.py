@@ -86,6 +86,10 @@ MAX_SPEED = 255
 SPEED_FORMAT = "V:{left},{right}\n"  # Plantilla del mensaje
 SPEED_PERIOD_S = 0.05               # Un mensaje cada 50 ms (20 Hz)
 
+# --- Política de velocidad normal/reducida (reto parte 2: ZONA ESCOLAR) ---
+REDUCED_FORWARD_DUTY = 0.20        # [TB] PulseDriver: fracción de ciclos que avanza en velocidad reducida
+REDUCED_BASE_SPEED = 30            # [TB] SpeedDriver: velocidad base reducida (0-255)
+
 # --- Modelo aproximado del robot (solo para la ventana "Movimiento") ---
 SIM_FORWARD_CM_PER_S = 20.0         # Velocidad lineal con 'w' / BASE_SPEED
 SIM_TURN_DEG_PER_S = 180.0          # Velocidad de giro con 'a'/'d'

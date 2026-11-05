@@ -12,10 +12,13 @@ import numpy as np
 import tensorflow as tf
 from sklearn.metrics import (ConfusionMatrixDisplay, classification_report,
                              confusion_matrix, f1_score)
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GroupShuffleSplit
 
 MODELOS = {
     "VGG16": (applications.VGG16, applications.vgg16.preprocess_input),
+    "ResNet50": (applications.ResNet50, applications.resnet50.preprocess_input),
+    "MobileNetV2": (applications.MobileNetV2, applications.mobilenet_v2.preprocess_input),
+    "EfficientNetB0": (applications.EfficientNetB0, applications.efficientnet.preprocess_input),
 }
 
 
@@ -105,22 +108,55 @@ class CNNTrainer:
         self.class_names = class_names
         self.num_classes = len(self.class_names)
 
-        train_val_paths, test_paths, train_val_labels, test_labels = train_test_split(
-            file_paths,
-            labels,
-            test_size=self.test_split,
-            stratify=labels,
-            random_state=self.seed,
-        )
+        # Extract capture bucket groups from filename
+        # For classes 0-3 (captured images): use timestamp YYYYMMDD_HHMM (first 13 chars)
+        # For class 4 (fondo): use source pista name from filename (e.g., 'fondo_zigzag_00' -> 'zigzag')
+        groups = []
+        for p in file_paths:
+            fname = os.path.basename(p)
+            # Get class label from parent directory
+            cls_dir = os.path.basename(os.path.dirname(p))
+            if cls_dir == "4":  # fondo class
+                # Extract pista name: 'fondo_zigzag_00.jpg' -> 'zigzag'
+                if fname.startswith("fondo_"):
+                    pista = fname[6:].split('_')[0]  # 'fondo_zigzag_00.jpg' -> 'zigzag'
+                    groups.append(f"fondo_{pista}")
+                else:
+                    groups.append(fname[:13] if len(fname) >= 13 else fname)
+            else:
+                groups.append(fname[:13] if len(fname) >= 13 else fname)
+        groups = np.array(groups)
+
+        # Group-aware splits: GroupShuffleSplit ensures no group appears in multiple partitions
+        gss = GroupShuffleSplit(n_splits=1, test_size=self.test_split, random_state=self.seed)
+        train_val_idx, test_idx = next(gss.split(file_paths, labels, groups))
+        train_val_paths = [file_paths[i] for i in train_val_idx]
+        train_val_labels = [labels[i] for i in train_val_idx]
+        train_val_groups = groups[train_val_idx]
+        test_paths = [file_paths[i] for i in test_idx]
+        test_labels = [labels[i] for i in test_idx]
 
         val_rel = self.val_split / (1.0 - self.test_split)
-        train_paths, val_paths, train_labels, val_labels = train_test_split(
-            train_val_paths,
-            train_val_labels,
-            test_size=val_rel,
-            stratify=train_val_labels,
-            random_state=self.seed,
-        )
+        gss_val = GroupShuffleSplit(n_splits=1, test_size=val_rel, random_state=self.seed)
+        train_idx, val_idx = next(gss_val.split(train_val_paths, train_val_labels, train_val_groups))
+        train_paths = [train_val_paths[i] for i in train_idx]
+        train_labels = [train_val_labels[i] for i in train_idx]
+        val_paths = [train_val_paths[i] for i in val_idx]
+        val_labels = [train_val_labels[i] for i in val_idx]
+
+        # Post-hoc assertion: every class appears in every partition
+        for part_name, part_labels in [("train", train_labels), ("val", val_labels), ("test", test_labels)]:
+            unique_classes = set(part_labels)
+            if len(unique_classes) != self.num_classes:
+                raise ValueError(
+                    f"Partición {part_name} no tiene todas las {self.num_classes} clases: {unique_classes}"
+                )
+
+        # Persist splits for reproducibility
+        os.makedirs(self.exp_dir, exist_ok=True)
+        for name, paths in [("train", train_paths), ("val", val_paths), ("test", test_paths)]:
+            with open(os.path.join(self.exp_dir, f"splits_{name}.txt"), "w") as f:
+                f.write("\n".join(paths))
 
         self.train_raw = self._crear_dataset(train_paths, train_labels, entrenar=True)
         self.val_raw = self._crear_dataset(val_paths, val_labels)
